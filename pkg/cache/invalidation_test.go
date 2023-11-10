@@ -217,3 +217,192 @@ func TestInvalidation(t *testing.T) {
 	}
 
 }
+
+func TestInvalidationNoConsumerGroup(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signal.DefaultBroker.Debug = true
+	defer func() {
+		signal.DefaultBroker.Debug = false
+	}()
+
+	_, zkIp, err := docker.Zookeeper(ctx, wg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	zkUrl := zkIp + ":2181"
+
+	//kafka
+	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	cache, err := New(Config{
+		Debug: true,
+		CacheInvalidationSignalHooks: map[Signal]ToKey{
+			signal.Known.CacheInvalidationAll: nil,
+			signal.Known.DeviceTypeCacheInvalidation: func(signalValue string) (cacheKey string) {
+				return "dt." + signalValue
+			},
+			signal.Known.DeviceCacheInvalidation: func(signalValue string) (cacheKey string) {
+				return "d." + signalValue
+			},
+		}})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = invalidator.StartKnownCacheInvalidators(ctx, kafka.Config{
+		KafkaUrl:    kafkaUrl,
+		StartOffset: kafka.LastOffset,
+		Wg:          wg,
+	}, invalidator.KnownTopics{
+		DeviceTopic:     "devices",
+		DeviceTypeTopic: "device-types",
+	}, nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = invalidator.StartCacheInvalidatorAll(ctx, kafka.Config{
+		KafkaUrl:    kafkaUrl,
+		StartOffset: kafka.LastOffset,
+		Wg:          wg,
+	}, []string{"all"}, nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = cache.Set("dt.1", "foo", time.Hour)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = cache.Set("dt.2", "foo", time.Hour)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = cache.Set("d.1", "foo", time.Hour)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = cache.Set("d.2", "foo", time.Hour)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = cache.Set("foo", "foo", time.Hour)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "dt.2", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.1", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+		return
+	}
+
+	time.Sleep(10 * time.Second)
+
+	allProducer, err := kafka.NewProducer(ctx, kafka.Config{
+		KafkaUrl: kafkaUrl,
+		Wg:       wg,
+	}, "all")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	deviceTypeProducer, err := kafka.NewProducer(ctx, kafka.Config{
+		KafkaUrl: kafkaUrl,
+		Wg:       wg,
+	}, "device-types")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	deviceProducer, err := kafka.NewProducer(ctx, kafka.Config{
+		KafkaUrl: kafkaUrl,
+		Wg:       wg,
+	}, "devices")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = deviceProducer.Produce("test", []byte(`{"id":"1"}`))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = deviceTypeProducer.Produce("test", []byte(`{"id":"2"}`))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(10 * time.Second)
+
+	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+		return
+	}
+	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+		return
+	}
+
+	err = allProducer.Produce("test", []byte(`foobar`))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(10 * time.Second)
+
+	if !checkCacheGet(t, cache, "dt.1", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "d.2", nil, ErrNotFound) {
+		return
+	}
+	if !checkCacheGet(t, cache, "foo", nil, ErrNotFound) {
+		return
+	}
+
+}

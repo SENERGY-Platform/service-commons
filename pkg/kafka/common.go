@@ -26,12 +26,13 @@ import (
 
 type Config struct {
 	KafkaUrl               string
-	ConsumerGroup          string
-	StartOffset            int64
-	Debug                  bool
-	TimeNow                func() time.Time
+	ConsumerGroup          string           //optional
+	StartOffset            int64            //defaults to FirstOffset
+	Debug                  bool             //defaults to false
+	TimeNow                func() time.Time //defaults to time.Now
 	Wg                     *sync.WaitGroup
-	PartitionWatchInterval time.Duration
+	PartitionWatchInterval time.Duration //defaults to time.Minute
+	OnError                func(error)   //defaults to log.Fatal
 }
 
 const LastOffset = kafka.LastOffset

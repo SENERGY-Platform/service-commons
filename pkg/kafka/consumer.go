@@ -19,10 +19,15 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/IBM/sarama"
 	"github.com/segmentio/kafka-go"
 	"io"
 	"log"
 	"os"
+	"runtime/debug"
+	"slices"
+	"sync"
 	"time"
 )
 
@@ -33,26 +38,24 @@ func NewConsumer(ctx context.Context, config Config, topic string, listener func
 }
 
 type Message struct {
-	Topic         string
-	Partition     int
-	Offset        int64
-	HighWaterMark int64
-	Key           []byte
-	Value         []byte
-	Time          time.Time
+	Topic     string
+	Partition int
+	Offset    int64
+	Key       []byte
+	Value     []byte
+	Time      time.Time
 }
 
 func NewMultiConsumer(ctx context.Context, config Config, topics []string, listener func(delivery Message) error) (err error) {
 	if len(topics) == 0 {
 		return nil
 	}
-	if config.ConsumerGroup == "" {
-		return errors.New("missing consumer-group")
-	}
 	if config.PartitionWatchInterval == 0 {
 		config.PartitionWatchInterval = time.Minute
 	}
-
+	if config.OnError == nil {
+		config.OnError = func(err error) { log.Fatal("ERROR:", err) }
+	}
 	for _, topic := range topics {
 		err = InitTopic(config.KafkaUrl, topic)
 		if err != nil {
@@ -60,7 +63,17 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 			return err
 		}
 	}
+	if config.ConsumerGroup == "" {
+		return newSaramaConsumer(ctx, config, topics, listener)
+	} else {
+		return newKafkaGoConsumer(ctx, config, topics, listener)
+	}
+}
 
+func newKafkaGoConsumer(ctx context.Context, config Config, topics []string, listener func(delivery Message) error) (err error) {
+	if len(topics) == 0 {
+		return nil
+	}
 	topic := ""
 	if len(topics) == 1 {
 		topic = topics[0]
@@ -101,19 +114,18 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 					return
 				}
 				if err != nil {
-					log.Fatal("ERROR: while consuming topic ", topic, err)
+					config.OnError(fmt.Errorf("while consuming topic: %v %w", topic, err))
 					return
 				}
 				if !(config.StartOffset == LastOffset && m.Time.Before(startTime)) { //if LastOffset: skip messages, that are older than the start time
 					err = retry(func() error {
 						return listener(Message{
-							Topic:         m.Topic,
-							Partition:     m.Partition,
-							Offset:        m.Offset,
-							HighWaterMark: m.HighWaterMark,
-							Key:           m.Key,
-							Value:         m.Value,
-							Time:          m.Time,
+							Topic:     m.Topic,
+							Partition: m.Partition,
+							Offset:    m.Offset,
+							Key:       m.Key,
+							Value:     m.Value,
+							Time:      m.Time,
 						})
 					}, func(n int64) time.Duration {
 						return time.Duration(n) * time.Second
@@ -121,17 +133,164 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 				}
 
 				if err != nil {
-					log.Fatal("ERROR: unable to handle message (no commit)", err)
+					config.OnError(fmt.Errorf("unable to handle message (no commit): %w", err))
+					return
 				} else {
 					err = r.CommitMessages(ctx, m)
 					if err != nil {
-						log.Fatal("ERROR: while committing consumption ", topic, err)
+						config.OnError(fmt.Errorf("while committing consumption: %v %w", topic, err))
 						return
 					}
 				}
 			}
 		}
 	}()
+	return nil
+}
+
+// used when no consumer-group is configured
+func newSaramaConsumer(ctx context.Context, config Config, topics []string, listener func(delivery Message) error) (err error) {
+	if len(topics) == 0 {
+		return nil
+	}
+
+	saramaConfig := sarama.NewConfig()
+	saramaConfig.Consumer.Return.Errors = true
+	switch config.StartOffset {
+	case LastOffset:
+		saramaConfig.Consumer.Offsets.Initial = sarama.OffsetNewest
+	case FirstOffset:
+		saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
+	default:
+		saramaConfig.Consumer.Offsets.Initial = sarama.OffsetOldest
+	}
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		saramaConfig.ClientID = buildInfo.Path
+	}
+
+	client, err := sarama.NewConsumer([]string{config.KafkaUrl}, saramaConfig)
+	if err != nil {
+		return err
+	}
+
+	if config.Wg != nil {
+		config.Wg.Add(1)
+	}
+	partitionWg := sync.WaitGroup{}
+	go func() {
+		if config.Wg != nil {
+			defer config.Wg.Done()
+		}
+		<-ctx.Done()
+		partitionWg.Wait()
+		log.Printf("close consumer for topics=%v err=%v\n", topics, client.Close())
+	}()
+
+	mux := sync.Mutex{}
+	partitionMap := map[string][]int32{}
+	handleNewPartitionInfo := func(topic string, partitions []int32) error {
+		mux.Lock()
+		defer mux.Unlock()
+		slices.Sort(partitions)
+		current := partitionMap[topic]
+		newPartitions := partitions[len(current):]
+		if len(newPartitions) > 0 {
+			partitionMap[topic] = partitions
+			for _, partition := range newPartitions {
+				consumer, err := client.ConsumePartition(topic, partition, saramaConfig.Consumer.Offsets.Initial)
+				if err != nil {
+					return err
+				}
+				partitionWg.Add(1)
+				go func() {
+					<-ctx.Done()
+					defer log.Printf("closing consumer for topic=%v partition=%v err=%v\n", topic, partition, consumer.Close())
+				}()
+
+				go func(topic string, partition int32, consumer sarama.PartitionConsumer) {
+					log.Printf("consume topic=%v partition=%v\n", topic, partition)
+					defer partitionWg.Done()
+					defer log.Printf("closed consumer for topic=%v partition=%v\n", topic, partition)
+					for {
+						select {
+						case <-ctx.Done():
+							return
+						case consumerError, ok := <-consumer.Errors():
+							if !ok {
+								return
+							}
+							if consumerError != nil {
+								config.OnError(consumerError)
+								return
+							}
+						case msg, ok := <-consumer.Messages():
+							if !ok {
+								return
+							}
+							if config.Debug && msg != nil {
+								log.Printf("DEBUG: receive topic=%v partition=%v key=%v message=%v\n", topic, partition, string(msg.Key), string(msg.Value))
+							}
+							if msg != nil {
+								err = retry(func() error {
+									return listener(Message{
+										Topic:     msg.Topic,
+										Partition: int(msg.Partition),
+										Offset:    msg.Offset,
+										Key:       msg.Key,
+										Value:     msg.Value,
+										Time:      msg.Timestamp,
+									})
+								}, func(n int64) time.Duration {
+									return time.Duration(n) * time.Second
+								}, 10*time.Minute)
+								if err != nil {
+									config.OnError(fmt.Errorf("unable to handle message (no commit): %w", err))
+									return
+								}
+							}
+						}
+					}
+				}(topic, partition, consumer)
+			}
+		}
+		return nil
+	}
+
+	updatePartitions := func(topics []string) error {
+		for _, topic := range topics {
+			partitions, err := client.Partitions(topic)
+			if err != nil {
+				return err
+			}
+			err = handleNewPartitionInfo(topic, partitions)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	err = updatePartitions(topics)
+	if err != nil {
+		return err
+	}
+
+	if config.PartitionWatchInterval > 0 {
+		ticker := time.NewTicker(config.PartitionWatchInterval)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					err = updatePartitions(topics)
+					if err != nil {
+						log.Println("ERROR: unable to update partition info", err)
+					}
+				}
+			}
+		}()
+	}
+
 	return nil
 }
 

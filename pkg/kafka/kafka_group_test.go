@@ -19,7 +19,6 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
 	"reflect"
 	"strconv"
@@ -28,7 +27,7 @@ import (
 	"time"
 )
 
-func TestKafka(t *testing.T) {
+func TestKafkaGroup(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 
@@ -57,10 +56,11 @@ func TestKafka(t *testing.T) {
 	wait := sync.WaitGroup{}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:      kafkaUrl,
+		ConsumerGroup: "test",
+		Debug:         true,
 		TimeNow: func() time.Time {
-			return time.Now() //time.Time{}
+			return time.Time{}
 		},
 	}
 
@@ -109,7 +109,7 @@ func TestKafka(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-func TestKafkaPartitions(t *testing.T) {
+func TestKafkaGroupPartitions(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 
@@ -131,8 +131,9 @@ func TestKafkaPartitions(t *testing.T) {
 	}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:      kafkaUrl,
+		ConsumerGroup: "test",
+		Debug:         true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -159,7 +160,6 @@ func TestKafkaPartitions(t *testing.T) {
 		defer mux.Unlock()
 		key := string(delivery.Key)
 		partition := strconv.Itoa(delivery.Partition)
-		fmt.Println("consume", key, partition, string(delivery.Value))
 		if _, ok := consumed[key]; !ok {
 			consumed[key] = map[string]int{}
 		}
@@ -209,7 +209,7 @@ func TestKafkaPartitions(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-func TestKafkaSubBalancer(t *testing.T) {
+func TestKafkaGroupSubBalancer(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 
@@ -231,8 +231,9 @@ func TestKafkaSubBalancer(t *testing.T) {
 	}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:      kafkaUrl,
+		ConsumerGroup: "test",
+		Debug:         true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -308,7 +309,7 @@ func TestKafkaSubBalancer(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-func TestKafkaLastOffset(t *testing.T) {
+func TestKafkaGroupLastOffset(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 
@@ -355,9 +356,10 @@ func TestKafkaLastOffset(t *testing.T) {
 
 	subCtx, subCancel := context.WithCancel(ctx)
 	err = NewConsumer(subCtx, Config{
-		KafkaUrl:    kafkaUrl,
-		StartOffset: LastOffset,
-		Wg:          wg,
+		KafkaUrl:      kafkaUrl,
+		ConsumerGroup: "test",
+		StartOffset:   LastOffset,
+		Wg:            wg,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
@@ -398,9 +400,10 @@ func TestKafkaLastOffset(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	err = NewConsumer(ctx, Config{
-		KafkaUrl:    kafkaUrl,
-		StartOffset: LastOffset,
-		Wg:          wg,
+		KafkaUrl:      kafkaUrl,
+		ConsumerGroup: "test",
+		StartOffset:   LastOffset,
+		Wg:            wg,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
