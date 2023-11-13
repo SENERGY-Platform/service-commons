@@ -23,6 +23,9 @@ import (
 )
 
 func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Duration) (result T, err error) {
+	if cache == nil {
+		return get()
+	}
 	var temp interface{}
 	var ok bool
 	temp, err = cache.Get(key)
@@ -63,6 +66,10 @@ func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Durati
 }
 
 func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), fallbackExp time.Duration) (result T, err error) {
+	if cache == nil {
+		result, _, err = get()
+		return result, err
+	}
 	var temp interface{}
 	var ok bool
 	temp, err = cache.Get(key)
