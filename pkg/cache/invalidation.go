@@ -19,6 +19,7 @@ package cache
 import (
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
 	"log"
+	"sync"
 )
 
 type Signal = signal.Signal
@@ -32,7 +33,7 @@ func (this *Cache) initCacheInvalidationHandler(config Config) (err error) {
 		sig := sig
 		valueToKey := valueToKey
 		if sig == signal.Known.CacheInvalidationAll || valueToKey == nil {
-			config.CacheInvalidationSignalBroker.Sub("", sig, func(_ string) {
+			config.CacheInvalidationSignalBroker.Sub("", sig, func(_ string, _ *sync.WaitGroup) {
 				if this.debug {
 					log.Println("DEBUG: invalidate all cache values")
 				}
@@ -42,7 +43,7 @@ func (this *Cache) initCacheInvalidationHandler(config Config) (err error) {
 				}
 			})
 		} else {
-			config.CacheInvalidationSignalBroker.Sub("", sig, func(value string) {
+			config.CacheInvalidationSignalBroker.Sub("", sig, func(value string, _ *sync.WaitGroup) {
 				key := valueToKey(value)
 				if this.debug {
 					log.Println("DEBUG: invalidate cache", key)

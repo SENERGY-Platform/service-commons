@@ -16,13 +16,18 @@
 
 package signal
 
+import "sync"
+
 var DefaultBroker = &Broker{}
 
 func Pub(signal Signal, value string) {
 	DefaultBroker.Pub(signal, value)
 }
 
-func Sub(id string, signal Signal, f func(value string)) string {
+// Sub returns id, if id == "", one will be created
+// wg will be done as soon as all subscription functions returned
+// on wg only Wait() may be called. and only within a separate go routine, to prevent a deadlock
+func Sub(id string, signal Signal, f func(value string, wg *sync.WaitGroup)) string {
 	return DefaultBroker.Sub(id, signal, f)
 }
 

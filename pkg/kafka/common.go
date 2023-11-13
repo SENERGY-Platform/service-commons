@@ -30,9 +30,9 @@ type Config struct {
 	StartOffset            int64            //defaults to FirstOffset
 	Debug                  bool             //defaults to false
 	TimeNow                func() time.Time //defaults to time.Now
-	Wg                     *sync.WaitGroup
-	PartitionWatchInterval time.Duration //defaults to time.Minute
-	OnError                func(error)   //defaults to log.Fatal
+	Wg                     *sync.WaitGroup  //optional
+	PartitionWatchInterval time.Duration    //defaults to time.Minute
+	OnError                func(error)      //defaults to log.Fatal
 }
 
 const LastOffset = kafka.LastOffset

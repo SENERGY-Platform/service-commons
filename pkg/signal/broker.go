@@ -33,32 +33,41 @@ type Broker struct {
 type Subscription struct {
 	Id     string
 	Signal Signal
-	F      func(value string)
+	F      func(value string, wg *sync.WaitGroup)
 }
 
 func (this *Broker) Pub(signal Signal, value string) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
+	wg := &sync.WaitGroup{}
+	for _, sub := range this.subscriptions {
+		if sub.Signal == signal {
+			wg.Add(1)
+		}
+	}
 	for _, sub := range this.subscriptions {
 		if sub.Signal == signal {
 			if this.Debug {
 				log.Println("DEBUG: send signal", sub.Id, signal, value)
 			}
-			go func(f func(value string)) {
+			go func(f func(value string, wg *sync.WaitGroup)) {
 				defer func() {
 					if r := recover(); r != nil {
 						log.Println("ERROR:", r)
 						debug.PrintStack()
 					}
 				}()
-				f(value)
+				defer wg.Done()
+				f(value, wg)
 			}(sub.F)
 		}
 	}
 }
 
 // Sub returns id, if id == "", one will be created
-func (this *Broker) Sub(id string, signal Signal, f func(value string)) string {
+// wg will be done as soon as all subscription functions returned
+// on wg only Wait() may be called. and only within a separate go routine, to prevent a deadlock
+func (this *Broker) Sub(id string, signal Signal, f func(value string, wg *sync.WaitGroup)) string {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("ERROR:", r)

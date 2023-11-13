@@ -16,6 +16,8 @@
 
 package signal
 
+import "sync"
+
 type Signal uint
 
 var Known = struct {
@@ -42,7 +44,10 @@ var Known = struct {
 	HubCacheInvalidation:            9,
 }
 
-func (this Signal) Sub(id string, f func(value string)) string {
+// Sub returns id, if id == "", one will be created
+// wg will be done as soon as all subscription functions returned
+// on wg only Wait() may be called. and only within a separate go routine, to prevent a deadlock
+func (this Signal) Sub(id string, f func(value string, wg *sync.WaitGroup)) string {
 	return Sub(id, this, f)
 }
 
