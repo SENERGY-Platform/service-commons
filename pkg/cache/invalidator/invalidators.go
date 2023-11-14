@@ -38,7 +38,7 @@ func StartKnownCacheInvalidators(ctx context.Context, kafkaConf kafka.Config, kn
 		knownTopics.ProtocolTopic,
 		knownTopics.LocationTopic,
 	}, func(s string) bool {
-		return s == ""
+		return s == "" || s == "-"
 	})
 	return StartCacheInvalidator(ctx, kafkaConf, topics, GetKnownSignalMapper(knownTopics), broker)
 }

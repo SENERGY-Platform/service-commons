@@ -117,6 +117,9 @@ func GetCommandSignalMapper(sig signal.Signal) SignalMapper {
 }
 
 func StartCacheInvalidator(ctx context.Context, kafkaConf kafka.Config, topics []string, mapper SignalMapper, broker *signal.Broker) error {
+	if len(topics) == 0 {
+		return nil
+	}
 	if broker == nil {
 		broker = signal.DefaultBroker
 	}
