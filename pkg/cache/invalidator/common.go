@@ -36,6 +36,8 @@ type KnownTopics struct {
 	HubTopic            string
 	DeviceClassTopic    string
 	DeviceGroupTopic    string
+	ProtocolTopic       string
+	LocationTopic       string
 }
 
 type Command struct {
@@ -78,6 +80,10 @@ func GetKnownSignalMapper(topics KnownTopics) SignalMapper {
 			sig = signal.Known.DeviceClassCacheInvalidation
 		case topics.DeviceGroupTopic:
 			sig = signal.Known.DeviceGroupInvalidation
+		case topics.ProtocolTopic:
+			sig = signal.Known.ProtocolInvalidation
+		case topics.LocationTopic:
+			sig = signal.Known.LocationInvalidation
 		default:
 			sig = signal.Known.GenericCacheInvalidation
 			log.Println("WARNING: unknown topic to map in GetKnownSignalMapper()", msg.Topic)
