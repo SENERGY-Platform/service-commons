@@ -34,6 +34,7 @@ func StartKnownCacheInvalidators(ctx context.Context, kafkaConf kafka.Config, kn
 		knownTopics.AspectTopic,
 		knownTopics.HubTopic,
 		knownTopics.DeviceClassTopic,
+		knownTopics.DeviceGroupTopic,
 	}, func(s string) bool {
 		return s == ""
 	})

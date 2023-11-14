@@ -31,6 +31,7 @@ var Known = struct {
 	AspectCacheInvalidation         Signal
 	DeviceClassCacheInvalidation    Signal
 	HubCacheInvalidation            Signal
+	DeviceGroupInvalidation         Signal
 }{
 	CacheInvalidationAll:            0,
 	GenericCacheInvalidation:        1,
@@ -42,6 +43,7 @@ var Known = struct {
 	AspectCacheInvalidation:         7,
 	DeviceClassCacheInvalidation:    8,
 	HubCacheInvalidation:            9,
+	DeviceGroupInvalidation:         10,
 }
 
 // Sub returns id, if id == "", one will be created
