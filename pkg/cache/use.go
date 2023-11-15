@@ -18,6 +18,7 @@ package cache
 
 import (
 	"fmt"
+	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
 	"log"
 	"time"
 )
@@ -40,7 +41,7 @@ func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Durati
 	result, err = get()
 	if err != nil {
 		if cache.fallback != nil {
-			temp, err = cache.fallback.Get(key)
+			temp, err = fallback.Get[T](cache.fallback, key)
 			if err != nil {
 				return result, err
 			}
@@ -85,7 +86,7 @@ func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Durati
 	result, exp, err = get()
 	if err != nil {
 		if cache.fallback != nil {
-			temp, err = cache.fallback.Get(key)
+			temp, err = fallback.Get[T](cache.fallback, key)
 			if err != nil {
 				return result, err
 			}

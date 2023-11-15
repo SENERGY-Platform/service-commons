@@ -44,6 +44,24 @@ type Fallback struct {
 	mux    sync.Mutex
 }
 
+func Get[T any](fallback *Fallback, key string) (value T, err error) {
+	temp, err := fallback.Get(key)
+	if err != nil {
+		return value, err
+	}
+	switch v := temp.(type) {
+	case T:
+		return v, nil
+	default:
+		buf, err := json.Marshal(temp)
+		if err != nil {
+			return value, err
+		}
+		err = json.Unmarshal(buf, &value)
+		return value, err
+	}
+}
+
 func (this *Fallback) Get(key string) (value interface{}, err error) {
 	this.mux.Lock()
 	defer this.mux.Unlock()
