@@ -17,6 +17,7 @@
 package signal
 
 import (
+	"context"
 	"github.com/google/uuid"
 	"log"
 	"runtime/debug"
@@ -93,4 +94,8 @@ func (this *Broker) Unsub(id string) {
 	this.subscriptions = slices.DeleteFunc(this.subscriptions, func(sub Subscription) bool {
 		return sub.Id == id
 	})
+}
+
+func (this *Broker) Wait(ctx context.Context, sig Signal, is func(value string) bool) error {
+	return Wait(ctx, sig, is, this)
 }

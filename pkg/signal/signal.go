@@ -34,6 +34,8 @@ var Known = struct {
 	DeviceGroupInvalidation         Signal
 	ProtocolInvalidation            Signal
 	LocationInvalidation            Signal
+
+	DeviceTypeUpdateDone Signal
 }{
 	CacheInvalidationAll:            0,
 	GenericCacheInvalidation:        1,
