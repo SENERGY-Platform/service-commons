@@ -53,43 +53,43 @@ type Wrapper struct {
 	Value       interface{} `json:"v"`
 }
 
-func (this *Cache) Get(key string) (value interface{}, err error) {
+func (this *Cache) Get(key string) (value interface{}, generic bool, err error) {
 	var temp *memcache.Item
 	temp, err = this.l1.Get(key)
 	if err == memcache.ErrCacheMiss {
 		err = ErrNotFound
-		return value, err
+		return value, true, err
 	}
 	if err != nil {
-		return value, err
+		return value, true, err
 	}
 	wrapper := Wrapper{}
 	err = json.Unmarshal(temp.Value, &wrapper)
 	if err != nil {
-		return value, err
+		return value, true, err
 	}
-	return wrapper.Value, nil
+	return wrapper.Value, true, nil
 }
 
-func (this *Cache) GetWithExpiration(key string) (value interface{}, exp time.Duration, err error) {
+func (this *Cache) GetWithExpiration(key string) (value interface{}, generic bool, exp time.Duration, err error) {
 	var temp *memcache.Item
 	temp, err = this.l1.Get(key)
 	if errors.Is(err, memcache.ErrCacheMiss) {
 		err = ErrNotFound
-		return value, exp, err
+		return value, true, exp, err
 	}
 	if err != nil {
-		return value, exp, err
+		return value, true, exp, err
 	}
 	wrapper := Wrapper{}
 	err = json.Unmarshal(temp.Value, &wrapper)
 	if err != nil {
-		return value, exp, err
+		return value, true, exp, err
 	}
 
 	exp = time.Until(time.Unix(wrapper.ExpUnixDate, 0))
 
-	return wrapper.Value, exp, nil
+	return wrapper.Value, true, exp, nil
 }
 
 func (this *Cache) Set(key string, value interface{}, exp time.Duration) (err error) {

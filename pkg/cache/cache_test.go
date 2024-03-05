@@ -424,6 +424,61 @@ func TestMemcachedL2(t *testing.T) {
 
 }
 
+type TestElement struct {
+	Foo string `json:"foo"`
+}
+
+func TestAheadMemcachedL2(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, memcacheIp, err := docker.Memcached(ctx, wg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	l1, err := localcache.New(time.Hour, time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	l2, err := memcached.New(10, time.Minute, memcacheIp+":11211")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	cache, err := New(Config{L1: l1, L2: l2})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = l2.Set("a", TestElement{"Bar"}, time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+		return
+	}
+	if !checkGet(t, cache, "a", TestElement{"Bar"}, nil) {
+		return
+	}
+
+	if !checkCacheGet(t, l1, "a", TestElement{"Bar"}, nil) {
+		return
+	}
+	if !checkGet(t, cache, "a", TestElement{"Bar"}, nil) {
+		return
+	}
+}
+
 func TestUseFallback(t *testing.T) {
 	cache, err := New(Config{FallbackProvider: fallback.NewProvider(t.TempDir() + "/fb.json")})
 	if err != nil {
@@ -491,10 +546,25 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 }
 
 func checkCacheGet(t *testing.T, cache interface {
-	Get(string) (interface{}, error)
+	Get(string) (interface{}, bool, error)
 }, key string, expectedItem interface{}, expectedError error) bool {
 	t.Helper()
-	actualItem, actualErr := cache.Get(key)
+	actualItem, _, actualErr := cache.Get(key)
+	result := true
+	if !reflect.DeepEqual(actualItem, expectedItem) {
+		t.Errorf("unexpected item \n%#v\n!=\n%#v\n", actualItem, expectedItem)
+		result = false
+	}
+	if !reflect.DeepEqual(actualErr, expectedError) {
+		t.Errorf("unexpected err \n%#v\n!=\n%#v\n", actualErr, expectedError)
+		result = false
+	}
+	return result
+}
+
+func checkGet[RESULT any](t *testing.T, cache *Cache, key string, expectedItem RESULT, expectedError error) bool {
+	t.Helper()
+	actualItem, actualErr := Get[RESULT](cache, key)
 	result := true
 	if !reflect.DeepEqual(actualItem, expectedItem) {
 		t.Errorf("unexpected item \n%#v\n!=\n%#v\n", actualItem, expectedItem)

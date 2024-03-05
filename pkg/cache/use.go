@@ -29,12 +29,13 @@ func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Durati
 	}
 	var temp interface{}
 	var ok bool
-	temp, err = cache.Get(key)
+	temp, err = Get[T](cache, key)
 	if err == nil {
 		result, ok = temp.(T)
 		if ok {
 			return result, nil
 		} else {
+
 			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
 		}
 	}
@@ -73,7 +74,7 @@ func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Durati
 	}
 	var temp interface{}
 	var ok bool
-	temp, err = cache.Get(key)
+	temp, err = Get[T](cache, key)
 	if err == nil {
 		result, ok = temp.(T)
 		if ok {

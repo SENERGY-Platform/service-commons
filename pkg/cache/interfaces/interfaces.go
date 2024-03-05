@@ -19,8 +19,8 @@ package interfaces
 import "time"
 
 type CacheImpl interface {
-	Get(key string) (value interface{}, err error)
-	GetWithExpiration(key string) (value interface{}, exp time.Duration, err error)
+	Get(key string) (value interface{}, generic bool, err error)
+	GetWithExpiration(key string) (value interface{}, generic bool, exp time.Duration, err error)
 	Set(key string, value interface{}, exp time.Duration) (err error)
 	Remove(key string) error
 	Reset() error

@@ -17,6 +17,7 @@
 package cache
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/cacheerrors"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
@@ -97,7 +98,7 @@ var ErrNotFound = cacheerrors.ErrNotFound
 
 type CacheImpl = interfaces.CacheImpl
 
-func (this *Cache) Get(key string) (item interface{}, err error) {
+func (this *Cache) Get(key string) (item interface{}, generic bool, err error) {
 	start := time.Now()
 	if this.readCacheHook != nil {
 		defer this.readCacheHook(time.Since(start))
@@ -109,27 +110,69 @@ func (this *Cache) Get(key string) (item interface{}, err error) {
 			}
 		}()
 	}
-
-	item, err = this.l1.Get(key)
+	item, generic, err = this.l1.Get(key)
 	if err == nil {
-		return item, nil
+		return item, generic, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
-		return item, err
+		return item, generic, err
 	}
 	if this.l2 == nil {
-		return item, err
+		return item, generic, err
 	}
 	if this.debug {
 		log.Println("DEBUG: use l2 cache", key, err)
 	}
 	var exp time.Duration
-	item, exp, err = this.l2.GetWithExpiration(key)
+	item, generic, exp, err = this.l2.GetWithExpiration(key)
+	if err != nil {
+		return item, generic, err
+	}
+	if exp > 0 {
+		_ = this.l1.Set(key, item, exp) // ignore l1 set err
+	}
+	return item, generic, nil
+}
+
+func Get[RESULT any](cache *Cache, key string) (item RESULT, err error) {
+	start := time.Now()
+	if cache.readCacheHook != nil {
+		defer cache.readCacheHook(time.Since(start))
+	}
+	if cache.cacheMissHook != nil {
+		defer func() {
+			if err != nil {
+				cache.cacheMissHook()
+			}
+		}()
+	}
+	var generic bool
+	var temp interface{}
+	temp, generic, err = cache.l1.Get(key)
+	if err == nil {
+		return cast[RESULT](temp, generic)
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return item, err
+	}
+	if cache.l2 == nil {
+		return item, err
+	}
+	if cache.debug {
+		log.Println("DEBUG: use l2 cache", key, err)
+	}
+	var exp time.Duration
+	temp, generic, exp, err = cache.l2.GetWithExpiration(key)
 	if err != nil {
 		return item, err
 	}
 	if exp > 0 {
-		_ = this.l1.Set(key, item, exp) // ignore l1 set err
+		item, err = cast[RESULT](temp, generic)
+		if err != nil {
+			log.Println("DEBUG: unable to cast item from l2 for l1 storage", key, err)
+		} else {
+			_ = cache.l1.Set(key, item, exp) // ignore l1 set err
+		}
 	}
 	return item, nil
 }
@@ -164,4 +207,26 @@ func (this *Cache) Close() (err error) {
 		err = errors.Join(err, this.l2.Close())
 	}
 	return err
+}
+
+func cast[RESULT any](item interface{}, generic bool) (result RESULT, err error) {
+	if generic {
+		return jsonCast[RESULT](item)
+	}
+	var ok bool
+	result, ok = item.(RESULT)
+	if !ok {
+		log.Printf("WARNING: cached value is of unexpected type: got %T, want %T\n", item, result)
+		return jsonCast[RESULT](item)
+	}
+	return result, nil
+}
+
+func jsonCast[RESULT any](item interface{}) (result RESULT, err error) {
+	temp, err := json.Marshal(item)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(temp, &result)
+	return result, err
 }
