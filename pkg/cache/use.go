@@ -24,18 +24,21 @@ import (
 )
 
 func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Duration) (result T, err error) {
+	return UseWithValidation(cache, key, get, exp, func(T) error { return nil })
+}
+
+func UseWithValidation[T any](cache *Cache, key string, get func() (T, error), exp time.Duration, validate func(T) error) (result T, err error) {
 	if cache == nil {
 		return get()
 	}
 	var temp interface{}
 	var ok bool
-	temp, err = Get[T](cache, key)
+	temp, err = GetWithValidation[T](cache, key, validate)
 	if err == nil {
 		result, ok = temp.(T)
 		if ok {
 			return result, nil
 		} else {
-
 			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
 		}
 	}

@@ -135,6 +135,19 @@ func (this *Cache) Get(key string) (item interface{}, generic bool, err error) {
 }
 
 func Get[RESULT any](cache *Cache, key string) (item RESULT, err error) {
+	return GetWithValidation[RESULT](cache, key, func(RESULT) error { return nil })
+}
+
+func GetWithValidation[RESULT any](cache *Cache, key string, validate func(RESULT) error) (item RESULT, err error) {
+	usedCache := "l1"
+	defer func() {
+		if err == nil {
+			err = validate(item)
+			if err != nil {
+				log.Printf("WARNING: invalidate %v cache because %v result is invalid (%v) (invalidate result=%v)\n", key, usedCache, err, cache.Remove(key))
+			}
+		}
+	}()
 	start := time.Now()
 	if cache.readCacheHook != nil {
 		defer cache.readCacheHook(time.Since(start))
@@ -162,6 +175,7 @@ func Get[RESULT any](cache *Cache, key string) (item RESULT, err error) {
 		log.Println("DEBUG: use l2 cache", key, err)
 	}
 	var exp time.Duration
+	usedCache = "l2"
 	temp, generic, exp, err = cache.l2.GetWithExpiration(key)
 	if err != nil {
 		return item, err

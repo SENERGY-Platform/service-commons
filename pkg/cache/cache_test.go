@@ -464,6 +464,12 @@ func TestAheadMemcachedL2(t *testing.T) {
 		return
 	}
 
+	err = l2.Set("b", TestElement{"Bar2"}, time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
 		return
 	}
@@ -477,6 +483,18 @@ func TestAheadMemcachedL2(t *testing.T) {
 	if !checkGet(t, cache, "a", TestElement{"Bar"}, nil) {
 		return
 	}
+
+	result, err := Use(cache, "b", func() (TestElement, error) {
+		return TestElement{}, errors.New("error")
+	}, 10*time.Second)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !reflect.DeepEqual(result, TestElement{"Bar2"}) {
+		t.Error(result)
+	}
+
 }
 
 func TestUseFallback(t *testing.T) {
