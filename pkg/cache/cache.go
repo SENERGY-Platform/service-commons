@@ -180,13 +180,12 @@ func GetWithValidation[RESULT any](cache *Cache, key string, validate func(RESUL
 	if err != nil {
 		return item, err
 	}
+	item, err = cast[RESULT](temp, generic)
+	if err != nil {
+		return item, err
+	}
 	if exp > 0 {
-		item, err = cast[RESULT](temp, generic)
-		if err != nil {
-			log.Println("DEBUG: unable to cast item from l2 for l1 storage", key, err)
-		} else {
-			_ = cache.l1.Set(key, item, exp) // ignore l1 set err
-		}
+		_ = cache.l1.Set(key, item, exp) // ignore l1 set err
 	}
 	return item, nil
 }
