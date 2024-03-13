@@ -134,11 +134,7 @@ func (this *Cache) Get(key string) (item interface{}, generic bool, err error) {
 	return item, generic, nil
 }
 
-func Get[RESULT any](cache *Cache, key string) (item RESULT, err error) {
-	return GetWithValidation[RESULT](cache, key, func(RESULT) error { return nil })
-}
-
-func GetWithValidation[RESULT any](cache *Cache, key string, validate func(RESULT) error) (item RESULT, err error) {
+func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (item RESULT, err error) {
 	usedCache := "l1"
 	defer func() {
 		if err == nil {

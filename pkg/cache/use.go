@@ -23,17 +23,13 @@ import (
 	"time"
 )
 
-func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Duration) (result T, err error) {
-	return UseWithValidation(cache, key, get, exp, func(T) error { return nil })
-}
-
-func UseWithValidation[T any](cache *Cache, key string, get func() (T, error), exp time.Duration, validate func(T) error) (result T, err error) {
+func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Duration, validate func(T) error) (result T, err error) {
 	if cache == nil {
 		return get()
 	}
 	var temp interface{}
 	var ok bool
-	temp, err = GetWithValidation[T](cache, key, validate)
+	temp, err = Get[T](cache, key, validate)
 	if err == nil {
 		result, ok = temp.(T)
 		if ok {
@@ -70,14 +66,14 @@ func UseWithValidation[T any](cache *Cache, key string, get func() (T, error), e
 	return result, nil
 }
 
-func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), fallbackExp time.Duration) (result T, err error) {
+func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), fallbackExp time.Duration, validate func(T) error) (result T, err error) {
 	if cache == nil {
 		result, _, err = get()
 		return result, err
 	}
 	var temp interface{}
 	var ok bool
-	temp, err = Get[T](cache, key)
+	temp, err = Get[T](cache, key, validate)
 	if err == nil {
 		result, ok = temp.(T)
 		if ok {
@@ -116,4 +112,8 @@ func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Durati
 	}
 	_ = cache.Set(key, result, exp) // ignore set errors
 	return result, nil
+}
+
+func NoValidation[T any](T) error {
+	return nil
 }

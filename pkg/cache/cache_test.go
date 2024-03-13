@@ -40,7 +40,7 @@ func TestMinimal(t *testing.T) {
 	result, err := Use(cache, "foo", func() (string, error) {
 		getterCalls = getterCalls + 1
 		return "bar", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +57,7 @@ func TestMinimal(t *testing.T) {
 	result, err = Use(cache, "foo", func() (string, error) {
 		getterCalls = getterCalls + 1
 		return "bar", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -87,7 +87,7 @@ func TestSignal(t *testing.T) {
 	result, err := Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -105,7 +105,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -123,7 +123,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar2", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -141,7 +141,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz2", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -163,7 +163,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar3", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -181,7 +181,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz3", nil
-	}, time.Second)
+	}, time.Second, NoValidation[string])
 	if err != nil {
 		t.Error(err)
 		return
@@ -486,7 +486,7 @@ func TestAheadMemcachedL2(t *testing.T) {
 
 	result, err := Use(cache, "b", func() (TestElement, error) {
 		return TestElement{}, errors.New("error")
-	}, 10*time.Second)
+	}, 10*time.Second, NoValidation[TestElement])
 	if err != nil {
 		t.Error(err)
 		return
@@ -505,7 +505,7 @@ func TestUseFallback(t *testing.T) {
 	}
 	result, err := Use(cache, "test", func() (string, error) {
 		return "foo", nil
-	}, time.Minute)
+	}, time.Minute, NoValidation[string])
 
 	if err != nil || result != "foo" {
 		t.Error(result, err)
@@ -523,7 +523,7 @@ func TestUseFallback(t *testing.T) {
 
 	result, err = Use(cache, "test", func() (string, error) {
 		return "", errors.New("error")
-	}, time.Minute)
+	}, time.Minute, NoValidation[string])
 	if err != nil || result != "foo" {
 		t.Error(result, err)
 		return
@@ -538,7 +538,7 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 	}
 	result, err := UseWithExpInGet(cache, "test", func() (string, time.Duration, error) {
 		return "foo", time.Minute, nil
-	}, time.Minute)
+	}, time.Minute, NoValidation[string])
 
 	if err != nil || result != "foo" {
 		t.Error(result, err)
@@ -556,7 +556,7 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 
 	result, err = UseWithExpInGet(cache, "test", func() (string, time.Duration, error) {
 		return "", time.Minute, errors.New("error")
-	}, time.Minute)
+	}, time.Minute, NoValidation[string])
 	if err != nil || result != "foo" {
 		t.Error(result, err)
 		return
@@ -582,7 +582,7 @@ func checkCacheGet(t *testing.T, cache interface {
 
 func checkGet[RESULT any](t *testing.T, cache *Cache, key string, expectedItem RESULT, expectedError error) bool {
 	t.Helper()
-	actualItem, actualErr := Get[RESULT](cache, key)
+	actualItem, actualErr := Get[RESULT](cache, key, NoValidation[RESULT])
 	result := true
 	if !reflect.DeepEqual(actualItem, expectedItem) {
 		t.Errorf("unexpected item \n%#v\n!=\n%#v\n", actualItem, expectedItem)
