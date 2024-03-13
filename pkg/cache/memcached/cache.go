@@ -50,53 +50,67 @@ var ErrNotFound = cacheerrors.ErrNotFound
 
 type Wrapper struct {
 	ExpUnixDate int64       `json:"e"`
-	Value       interface{} `json:"v"`
+	Value       interface{} `json:"v"` //deprecated
+	Json        string      `json:"j"`
 }
 
-func (this *Cache) Get(key string) (value interface{}, generic bool, err error) {
+func (this *Cache) Get(key string) (value interface{}, resultType interfaces.ResultType, err error) {
 	var temp *memcache.Item
 	temp, err = this.l1.Get(key)
 	if err == memcache.ErrCacheMiss {
 		err = ErrNotFound
-		return value, true, err
+		return value, resultType, err
 	}
 	if err != nil {
-		return value, true, err
+		return value, resultType, err
 	}
 	wrapper := Wrapper{}
 	err = json.Unmarshal(temp.Value, &wrapper)
 	if err != nil {
-		return value, true, err
+		return value, resultType, err
 	}
-	return wrapper.Value, true, nil
+
+	if wrapper.Json != "" {
+		return []byte(wrapper.Json), interfaces.JsonByteArray, nil
+	}
+
+	return wrapper.Value, interfaces.Generic, nil
 }
 
-func (this *Cache) GetWithExpiration(key string) (value interface{}, generic bool, exp time.Duration, err error) {
+func (this *Cache) GetWithExpiration(key string) (value interface{}, resultType interfaces.ResultType, exp time.Duration, err error) {
 	var temp *memcache.Item
 	temp, err = this.l1.Get(key)
 	if errors.Is(err, memcache.ErrCacheMiss) {
 		err = ErrNotFound
-		return value, true, exp, err
+		return value, resultType, exp, err
 	}
 	if err != nil {
-		return value, true, exp, err
+		return value, resultType, exp, err
 	}
 	wrapper := Wrapper{}
 	err = json.Unmarshal(temp.Value, &wrapper)
 	if err != nil {
-		return value, true, exp, err
+		return value, resultType, exp, err
 	}
 
 	exp = time.Until(time.Unix(wrapper.ExpUnixDate, 0))
 
-	return wrapper.Value, true, exp, nil
+	if wrapper.Json != "" {
+		return []byte(wrapper.Json), interfaces.JsonByteArray, exp, nil
+	}
+
+	return wrapper.Value, interfaces.Generic, exp, nil
 }
 
 func (this *Cache) Set(key string, value interface{}, exp time.Duration) (err error) {
 	item := &memcache.Item{Expiration: int32(exp.Seconds()), Key: key}
+	temp, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
 	item.Value, err = json.Marshal(Wrapper{
 		ExpUnixDate: time.Now().Add(exp).Unix(),
-		Value:       value,
+		Json:        string(temp),
 	})
 	if err != nil {
 		return err

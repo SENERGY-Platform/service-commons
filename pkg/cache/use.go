@@ -23,7 +23,7 @@ import (
 	"time"
 )
 
-func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Duration, validate func(T) error) (result T, err error) {
+func Use[T any](cache *Cache, key string, get func() (T, error), validate func(T) error, exp time.Duration, l2Exp ...time.Duration) (result T, err error) {
 	if cache == nil {
 		return get()
 	}
@@ -62,11 +62,11 @@ func Use[T any](cache *Cache, key string, get func() (T, error), exp time.Durati
 			err = nil
 		}
 	}
-	_ = cache.Set(key, result, exp) // ignore set errors
+	_ = cache.Set(key, result, exp, l2Exp...) // ignore set errors
 	return result, nil
 }
 
-func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), fallbackExp time.Duration, validate func(T) error) (result T, err error) {
+func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), validate func(T) error, fallbackExp time.Duration) (result T, err error) {
 	if cache == nil {
 		result, _, err = get()
 		return result, err

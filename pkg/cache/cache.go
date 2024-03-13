@@ -98,42 +98,7 @@ var ErrNotFound = cacheerrors.ErrNotFound
 
 type CacheImpl = interfaces.CacheImpl
 
-func (this *Cache) Get(key string) (item interface{}, generic bool, err error) {
-	start := time.Now()
-	if this.readCacheHook != nil {
-		defer this.readCacheHook(time.Since(start))
-	}
-	if this.cacheMissHook != nil {
-		defer func() {
-			if err != nil {
-				this.cacheMissHook()
-			}
-		}()
-	}
-	item, generic, err = this.l1.Get(key)
-	if err == nil {
-		return item, generic, nil
-	}
-	if !errors.Is(err, ErrNotFound) {
-		return item, generic, err
-	}
-	if this.l2 == nil {
-		return item, generic, err
-	}
-	if this.debug {
-		log.Println("DEBUG: use l2 cache", key, err)
-	}
-	var exp time.Duration
-	item, generic, exp, err = this.l2.GetWithExpiration(key)
-	if err != nil {
-		return item, generic, err
-	}
-	if exp > 0 {
-		_ = this.l1.Set(key, item, exp) // ignore l1 set err
-	}
-	return item, generic, nil
-}
-
+// Get has to be a generic function because else we would lose the type information on l2 cache promotion to l2
 func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (item RESULT, err error) {
 	usedCache := "l1"
 	defer func() {
@@ -155,11 +120,11 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 			}
 		}()
 	}
-	var generic bool
+	var resultType interfaces.ResultType
 	var temp interface{}
-	temp, generic, err = cache.l1.Get(key)
+	temp, resultType, err = cache.l1.Get(key)
 	if err == nil {
-		return cast[RESULT](temp, generic)
+		return cast[RESULT](temp, resultType)
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return item, err
@@ -172,11 +137,11 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 	}
 	var exp time.Duration
 	usedCache = "l2"
-	temp, generic, exp, err = cache.l2.GetWithExpiration(key)
+	temp, resultType, exp, err = cache.l2.GetWithExpiration(key)
 	if err != nil {
 		return item, err
 	}
-	item, err = cast[RESULT](temp, generic)
+	item, err = cast[RESULT](temp, resultType)
 	if err != nil {
 		return item, err
 	}
@@ -186,10 +151,14 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 	return item, nil
 }
 
-func (this *Cache) Set(key string, value interface{}, exp time.Duration) (err error) {
+func (this *Cache) Set(key string, value interface{}, exp time.Duration, l2Exp ...time.Duration) (err error) {
 	err = this.l1.Set(key, value, exp)
 	if this.l2 != nil {
-		err = errors.Join(err, this.l2.Set(key, value, exp))
+		if len(l2Exp) > 0 {
+			err = errors.Join(err, this.l2.Set(key, value, l2Exp[0]))
+		} else {
+			err = errors.Join(err, this.l2.Set(key, value, exp))
+		}
 	}
 	return err
 }
@@ -218,8 +187,16 @@ func (this *Cache) Close() (err error) {
 	return err
 }
 
-func cast[RESULT any](item interface{}, generic bool) (result RESULT, err error) {
-	if generic {
+func cast[RESULT any](item interface{}, resultType interfaces.ResultType) (result RESULT, err error) {
+	if resultType == interfaces.JsonByteArray {
+		temp, ok := item.([]byte)
+		if !ok {
+			err = errors.New("not a json byte array")
+		}
+		err = json.Unmarshal(temp, &result)
+		return result, err
+	}
+	if resultType == interfaces.Generic {
 		return jsonCast[RESULT](item)
 	}
 	var ok bool

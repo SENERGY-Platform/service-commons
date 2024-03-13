@@ -120,19 +120,19 @@ func TestInvalidation(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+	if !checkGet(t, cache, "dt.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", "foo", nil) {
+	if !checkGet(t, cache, "dt.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", "foo", nil) {
+	if !checkGet(t, cache, "d.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+	if !checkGet(t, cache, "d.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+	if !checkGet(t, cache, "foo", "foo", nil) {
 		return
 	}
 
@@ -176,19 +176,19 @@ func TestInvalidation(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+	if !checkGet(t, cache, "dt.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+	if !checkGet(t, cache, "d.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+	if !checkGet(t, cache, "foo", "foo", nil) {
 		return
 	}
 
@@ -200,19 +200,19 @@ func TestInvalidation(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	if !checkCacheGet(t, cache, "dt.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "foo", nil, ErrNotFound) {
 		return
 	}
 
@@ -309,19 +309,19 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+	if !checkGet(t, cache, "dt.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", "foo", nil) {
+	if !checkGet(t, cache, "dt.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", "foo", nil) {
+	if !checkGet(t, cache, "d.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+	if !checkGet(t, cache, "d.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+	if !checkGet(t, cache, "foo", "foo", nil) {
 		return
 	}
 
@@ -365,19 +365,19 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	if !checkCacheGet(t, cache, "dt.1", "foo", nil) {
+	if !checkGet(t, cache, "dt.1", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", "foo", nil) {
+	if !checkGet(t, cache, "d.2", "foo", nil) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", "foo", nil) {
+	if !checkGet(t, cache, "foo", "foo", nil) {
 		return
 	}
 
@@ -389,19 +389,19 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	if !checkCacheGet(t, cache, "dt.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "dt.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "dt.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.1", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.1", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "d.2", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "d.2", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "foo", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "foo", nil, ErrNotFound) {
 		return
 	}
 

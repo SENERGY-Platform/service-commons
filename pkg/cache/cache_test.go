@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
+	"github.com/SENERGY-Platform/service-commons/pkg/cache/interfaces"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/localcache"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/memcached"
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
@@ -40,7 +41,7 @@ func TestMinimal(t *testing.T) {
 	result, err := Use(cache, "foo", func() (string, error) {
 		getterCalls = getterCalls + 1
 		return "bar", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +58,7 @@ func TestMinimal(t *testing.T) {
 	result, err = Use(cache, "foo", func() (string, error) {
 		getterCalls = getterCalls + 1
 		return "bar", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -87,7 +88,7 @@ func TestSignal(t *testing.T) {
 	result, err := Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -105,7 +106,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -123,7 +124,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar2", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -141,7 +142,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz2", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -163,7 +164,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.1", func() (string, error) {
 		getterIsCalled = true
 		return "bar3", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -181,7 +182,7 @@ func TestSignal(t *testing.T) {
 	result, err = Use(cache, "dt.2", func() (string, error) {
 		getterIsCalled = true
 		return "batz3", nil
-	}, time.Second, NoValidation[string])
+	}, NoValidation[string], time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -264,13 +265,13 @@ func TestL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "a", "a1", nil) {
+	if !checkGet(t, cache, "a", "a1", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a1", nil) {
+	if !checkCacheGet(t, l1, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
 
@@ -280,13 +281,13 @@ func TestL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "a", "a2", nil) {
+	if !checkGet(t, cache, "a", "a2", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a2", nil) {
+	if !checkCacheGet(t, l1, "a", "a2", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
 
@@ -296,16 +297,16 @@ func TestL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l1, "a", nil, "", ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "a", "a1", nil) {
+	if !checkGet(t, cache, "a", "a1", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a1", nil) {
+	if !checkCacheGet(t, l1, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
 
@@ -314,13 +315,13 @@ func TestL2(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if !checkCacheGet(t, cache, "a", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "a", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l1, "a", nil, "", ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l2, "a", nil, "", ErrNotFound) {
 		return
 	}
 
@@ -362,13 +363,13 @@ func TestMemcachedL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "a", "a1", nil) {
+	if !checkGet(t, cache, "a", "a1", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a1", nil) {
+	if !checkCacheGet(t, l1, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", []byte(`"a1"`), interfaces.JsonByteArray, nil) {
 		return
 	}
 
@@ -378,13 +379,13 @@ func TestMemcachedL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "a", "a2", nil) {
+	if !checkGet(t, cache, "a", "a2", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a2", nil) {
+	if !checkCacheGet(t, l1, "a", "a2", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", []byte(`"a1"`), interfaces.JsonByteArray, nil) {
 		return
 	}
 
@@ -394,16 +395,16 @@ func TestMemcachedL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l1, "a", nil, "", ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, cache, "a", "a1", nil) {
+	if !checkGet(t, cache, "a", "a1", nil) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", "a1", nil) {
+	if !checkCacheGet(t, l1, "a", "a1", interfaces.ExactlyAsSet, nil) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", "a1", nil) {
+	if !checkCacheGet(t, l2, "a", []byte(`"a1"`), interfaces.JsonByteArray, nil) {
 		return
 	}
 
@@ -412,13 +413,13 @@ func TestMemcachedL2(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if !checkCacheGet(t, cache, "a", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "a", nil, ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l1, "a", nil, "", ErrNotFound) {
 		return
 	}
-	if !checkCacheGet(t, l2, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l2, "a", nil, "", ErrNotFound) {
 		return
 	}
 
@@ -470,14 +471,14 @@ func TestAheadMemcachedL2(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, l1, "a", nil, ErrNotFound) {
+	if !checkCacheGet(t, l1, "a", nil, "", ErrNotFound) {
 		return
 	}
 	if !checkGet(t, cache, "a", TestElement{"Bar"}, nil) {
 		return
 	}
 
-	if !checkCacheGet(t, l1, "a", TestElement{"Bar"}, nil) {
+	if !checkCacheGet(t, l1, "a", TestElement{"Bar"}, interfaces.ExactlyAsSet, nil) {
 		return
 	}
 	if !checkGet(t, cache, "a", TestElement{"Bar"}, nil) {
@@ -486,7 +487,7 @@ func TestAheadMemcachedL2(t *testing.T) {
 
 	result, err := Use(cache, "b", func() (TestElement, error) {
 		return TestElement{}, errors.New("error")
-	}, 10*time.Second, NoValidation[TestElement])
+	}, NoValidation[TestElement], 10*time.Second)
 	if err != nil {
 		t.Error(err)
 		return
@@ -505,7 +506,7 @@ func TestUseFallback(t *testing.T) {
 	}
 	result, err := Use(cache, "test", func() (string, error) {
 		return "foo", nil
-	}, time.Minute, NoValidation[string])
+	}, NoValidation[string], time.Minute)
 
 	if err != nil || result != "foo" {
 		t.Error(result, err)
@@ -517,13 +518,13 @@ func TestUseFallback(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "test", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "test", nil, ErrNotFound) {
 		return
 	}
 
 	result, err = Use(cache, "test", func() (string, error) {
 		return "", errors.New("error")
-	}, time.Minute, NoValidation[string])
+	}, NoValidation[string], time.Minute)
 	if err != nil || result != "foo" {
 		t.Error(result, err)
 		return
@@ -538,7 +539,7 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 	}
 	result, err := UseWithExpInGet(cache, "test", func() (string, time.Duration, error) {
 		return "foo", time.Minute, nil
-	}, time.Minute, NoValidation[string])
+	}, NoValidation[string], time.Minute)
 
 	if err != nil || result != "foo" {
 		t.Error(result, err)
@@ -550,13 +551,13 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 		return
 	}
 
-	if !checkCacheGet(t, cache, "test", nil, ErrNotFound) {
+	if !checkGet[any](t, cache, "test", nil, ErrNotFound) {
 		return
 	}
 
 	result, err = UseWithExpInGet(cache, "test", func() (string, time.Duration, error) {
 		return "", time.Minute, errors.New("error")
-	}, time.Minute, NoValidation[string])
+	}, NoValidation[string], time.Minute)
 	if err != nil || result != "foo" {
 		t.Error(result, err)
 		return
@@ -564,11 +565,15 @@ func TestUseWithExpInGetFallback(t *testing.T) {
 }
 
 func checkCacheGet(t *testing.T, cache interface {
-	Get(string) (interface{}, bool, error)
-}, key string, expectedItem interface{}, expectedError error) bool {
+	Get(string) (interface{}, interfaces.ResultType, error)
+}, key string, expectedItem interface{}, expectedResultType interfaces.ResultType, expectedError error) bool {
 	t.Helper()
-	actualItem, _, actualErr := cache.Get(key)
+	actualItem, actualResultType, actualErr := cache.Get(key)
 	result := true
+	if expectedResultType != "" && actualResultType != expectedResultType {
+		t.Errorf("unexpected result type \n%#v\n!=\n%#v\n", actualResultType, expectedResultType)
+		result = false
+	}
 	if !reflect.DeepEqual(actualItem, expectedItem) {
 		t.Errorf("unexpected item \n%#v\n!=\n%#v\n", actualItem, expectedItem)
 		result = false

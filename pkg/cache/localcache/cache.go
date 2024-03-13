@@ -37,16 +37,16 @@ func NewProvider(defaultExp time.Duration, cleanupInterval time.Duration) func()
 	}
 }
 
-func (this *Cache) Get(key string) (value interface{}, generic bool, err error) {
+func (this *Cache) Get(key string) (value interface{}, resultType interfaces.ResultType, err error) {
 	var found bool
 	value, found = this.l1.Get(key)
 	if !found {
 		err = cacheerrors.ErrNotFound
 	}
-	return value, false, err
+	return value, interfaces.ExactlyAsSet, err
 }
 
-func (this *Cache) GetWithExpiration(key string) (value interface{}, generic bool, exp time.Duration, err error) {
+func (this *Cache) GetWithExpiration(key string) (value interface{}, resultType interfaces.ResultType, exp time.Duration, err error) {
 	var found bool
 	var expTime time.Time
 	value, expTime, found = this.l1.GetWithExpiration(key)
@@ -54,10 +54,10 @@ func (this *Cache) GetWithExpiration(key string) (value interface{}, generic boo
 		err = cacheerrors.ErrNotFound
 	}
 	if err != nil {
-		return value, false, exp, err
+		return value, interfaces.ExactlyAsSet, exp, err
 	}
 	exp = time.Until(expTime)
-	return value, false, exp, nil
+	return value, interfaces.ExactlyAsSet, exp, nil
 }
 
 func (this *Cache) Set(key string, value interface{}, exp time.Duration) (err error) {
