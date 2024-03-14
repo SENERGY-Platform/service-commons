@@ -17,13 +17,16 @@
 package accesslog
 
 import (
+	"encoding/json"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func Test(t *testing.T) {
@@ -49,6 +52,26 @@ func Test(t *testing.T) {
 			if string(msg) != "testmessage" {
 				t.Error(string(msg))
 			}
+		}
+
+		if request.URL.Path == "/error" {
+			http.Error(writer, "some error", 500)
+			return
+		}
+
+		if request.URL.Path == "/panic" {
+			panic("some panic")
+		}
+
+		if request.URL.Path == "/response" {
+			json.NewEncoder(writer).Encode(map[string]interface{}{"foo": "bar"})
+			return
+		}
+
+		if request.URL.Path == "/lock" {
+			time.Sleep(15 * time.Second)
+			json.NewEncoder(writer).Encode(map[string]interface{}{"foo": "bar"})
+			return
 		}
 
 		writer.WriteHeader(200)
@@ -114,4 +137,86 @@ func Test(t *testing.T) {
 		return
 	}
 
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/error", nil)
+	req.Header.Set("Authorization", testtoken)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if c := calls.Load(); c != 4 {
+		t.Error(c)
+	}
+	if c := callsWithToken.Load(); c != 3 {
+		t.Error(c)
+		return
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/response", nil)
+	req.Header.Set("Authorization", testtoken)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if c := calls.Load(); c != 5 {
+		t.Error(c)
+	}
+	if c := callsWithToken.Load(); c != 4 {
+		t.Error(c)
+		return
+	}
+
+	var body interface{}
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !reflect.DeepEqual(body, map[string]interface{}{"foo": "bar"}) {
+		t.Error(body)
+		return
+	}
+
+	req, err = http.NewRequest(http.MethodGet, server.URL+"/lock", nil)
+	req.Header.Set("Authorization", testtoken)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if c := calls.Load(); c != 6 {
+		t.Error(c)
+	}
+	if c := callsWithToken.Load(); c != 5 {
+		t.Error(c)
+		return
+	}
+
+	http.Get(server.URL + "/panic")
+	if c := calls.Load(); c != 7 {
+		t.Error(c)
+	}
+	if c := callsWithToken.Load(); c != 5 {
+		t.Error(c)
+		return
+	}
 }

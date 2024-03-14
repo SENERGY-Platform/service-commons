@@ -19,6 +19,7 @@ package accesslog
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"io"
 	"log/slog"
@@ -28,7 +29,10 @@ import (
 	"runtime/debug"
 	"sort"
 	"sync"
+	"time"
 )
+
+var PreliminaryLogTimeout = 10 * time.Second
 
 func New(handler http.Handler) http.Handler {
 	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -38,9 +42,13 @@ func New(handler http.Handler) http.Handler {
 
 func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
 	if info, ok := debug.ReadBuildInfo(); ok {
-		logger = logger.With("snrgy-log-type", "http-access", "go-module", info.Path)
+		logger = logger.With("go-module", info.Path)
 	}
-	return &AccessLogMiddleware{handler: handler, getCallSourceCache: map[string]string{}, logger: logger}
+	return &AccessLogMiddleware{
+		handler:            handler,
+		getCallSourceCache: map[string]string{},
+		logger:             logger.With("snrgy-log-type", "http-access"),
+		errorlogger:        logger.With("snrgy-log-type", "http-access-panic")}
 }
 
 type AccessLogMiddleware struct {
@@ -48,18 +56,22 @@ type AccessLogMiddleware struct {
 	getCallSourceCache    map[string]string
 	getCallSourceCacheMux sync.Mutex
 	logger                *slog.Logger
+	errorlogger           *slog.Logger
 }
 
 func (this *AccessLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	modifiedRequest := this.log(r)
+	resp := NewResponse(w)
+	modifiedRequest, finish := this.log(r)
+	defer finish(resp)
 	if this.handler != nil {
-		this.handler.ServeHTTP(w, modifiedRequest)
+		this.handler.ServeHTTP(resp, modifiedRequest)
 	} else {
 		http.Error(w, "Forbidden", 403)
 	}
 }
 
-func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *http.Request) {
+func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *http.Request, finish func(*Response)) {
+	start := time.Now()
 	method := request.Method
 	path := request.URL.String()
 	caller := this.getCallSource(request)
@@ -87,9 +99,23 @@ func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *ht
 		this.logger.Error("unable to read request body", "error", err)
 	}
 	modifiedRequest.Body = io.NopCloser(bytes.NewBuffer(body))
-
-	this.logger.Info("", "method", method, "path", path, "caller", caller, "user", user, "headers", headers, "body", string(body))
-	return modifiedRequest
+	finished := false
+	args := []any{"method", method, "path", path, "caller", caller, "user", user, "headers", headers, "body", string(body)}
+	time.AfterFunc(PreliminaryLogTimeout, func() {
+		if !finished {
+			finalArgs := append(args, "preliminary", true)
+			this.logger.Info("", finalArgs...)
+		}
+	})
+	return modifiedRequest, func(response *Response) {
+		finished = true
+		if r := recover(); r != nil {
+			this.errorlogger.Error("recovered from panic", "error", fmt.Sprint(r), "stacktrace", string(debug.Stack()))
+			http.Error(response, "Internal Server Error (recovered from panic)", 500)
+		}
+		finalArgs := append(args, "response-status-code", response.StatusCode, "request-duration-microseconds", time.Since(start).Microseconds())
+		this.logger.Info("", finalArgs...)
+	}
 }
 
 func (this *AccessLogMiddleware) getCallSource(req *http.Request) (result string) {
