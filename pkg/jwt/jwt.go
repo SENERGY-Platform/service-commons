@@ -57,7 +57,7 @@ func Parse(token string) (claims Token, err error) {
 }
 
 type Token struct {
-	Token       string              `json:"-"`
+	Token       string              `json:"__token"`
 	Sub         string              `json:"sub,omitempty"`
 	RealmAccess map[string][]string `json:"realm_access,omitempty"`
 }
