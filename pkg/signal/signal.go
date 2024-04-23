@@ -35,7 +35,7 @@ var Known = struct {
 	ProtocolInvalidation            Signal
 	LocationInvalidation            Signal
 
-	DeviceTypeUpdateDone Signal
+	UpdateDone Signal
 }{
 	CacheInvalidationAll:            0,
 	GenericCacheInvalidation:        1,
@@ -50,6 +50,8 @@ var Known = struct {
 	DeviceGroupInvalidation:         10,
 	ProtocolInvalidation:            11,
 	LocationInvalidation:            12,
+
+	UpdateDone: 13,
 }
 
 // Sub returns id, if id == "", one will be created
