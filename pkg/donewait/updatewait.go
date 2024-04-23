@@ -19,6 +19,7 @@ package donewait
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
@@ -75,5 +76,28 @@ func AsyncWait(ctx context.Context, msg DoneMsg, broker *signal.Broker) func() e
 	return func() error {
 		wg.Wait()
 		return err
+	}
+}
+
+func AsyncWaitMultiple(ctx context.Context, messages []DoneMsg, broker *signal.Broker) func() error {
+	wg := sync.WaitGroup{}
+	errList := []error{}
+	errMux := sync.Mutex{}
+	for _, m := range messages {
+		wg.Add(1)
+		go func(msg DoneMsg) {
+			defer wg.Done()
+			err := WaitForDone(ctx, msg, broker)
+			if err != nil {
+				errMux.Lock()
+				defer errMux.Unlock()
+				errList = append(errList, err)
+			}
+		}(m)
+	}
+
+	return func() error {
+		wg.Wait()
+		return errors.Join(errList...)
 	}
 }
