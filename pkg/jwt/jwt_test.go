@@ -53,6 +53,10 @@ func TestWithCache(t *testing.T) {
 		t.Error("token is empty", token)
 		return
 	}
+	if token.Username != "ingo" {
+		t.Error("username is not ingo", token)
+		return
+	}
 	t.Log(token)
 
 	return
@@ -93,6 +97,10 @@ func TestWithMemcachedCache(t *testing.T) {
 		t.Error("token is empty", token)
 		return
 	}
+	if token.Username != "ingo" {
+		t.Error("username is not ingo", token)
+		return
+	}
 	t.Log(token)
 
 	token, err = cache.Use(c, "token.1", func() (Token, error) {
@@ -101,6 +109,10 @@ func TestWithMemcachedCache(t *testing.T) {
 
 	if token.Token == "" {
 		t.Error("token is empty", token)
+		return
+	}
+	if token.Username != "ingo" {
+		t.Error("username is not ingo", token)
 		return
 	}
 	t.Log(token)
