@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/golang-jwt/jwt"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -60,6 +61,7 @@ type Token struct {
 	Token       string              `json:"__token"`
 	Sub         string              `json:"sub,omitempty"`
 	RealmAccess map[string][]string `json:"realm_access,omitempty"`
+	Groups      []string            `json:"groups,omitempty"`
 	Username    string              `json:"preferred_username,omitempty"`
 }
 
@@ -90,15 +92,14 @@ func (this *Token) GetRoles() []string {
 	return this.RealmAccess["roles"]
 }
 
-func (this *Token) HasRole(role string) bool {
-	return contains(this.GetRoles(), role)
+func (this *Token) GetGroups() []string {
+	return this.Groups
 }
 
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
+func (this *Token) HasRole(role string) bool {
+	return slices.Contains(this.GetRoles(), role)
+}
+
+func (this *Token) HasGroup(group string) bool {
+	return slices.Contains(this.GetGroups(), group)
 }
