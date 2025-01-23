@@ -58,11 +58,13 @@ func Parse(token string) (claims Token, err error) {
 }
 
 type Token struct {
-	Token       string              `json:"__token"`
-	Sub         string              `json:"sub,omitempty"`
-	RealmAccess map[string][]string `json:"realm_access,omitempty"`
-	Groups      []string            `json:"groups,omitempty"`
-	Username    string              `json:"preferred_username,omitempty"`
+	Token         string              `json:"__token"`
+	Sub           string              `json:"sub,omitempty"`
+	RealmAccess   map[string][]string `json:"realm_access,omitempty"`
+	Groups        []string            `json:"groups,omitempty"`
+	Username      string              `json:"preferred_username,omitempty"`
+	Email         string              `json:"email"`
+	EmailVerified bool                `json:"email_verified"`
 }
 
 func (this *Token) String() string {
