@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-func exchangeUserToken(keycloakEndpoint, clientId, clientSecret, userId string) (token Token, expiration time.Duration, err error) {
+func ExchangeUserToken(keycloakEndpoint, clientId, clientSecret, userId string) (token Token, expiration time.Duration, err error) {
 	resp, err := http.PostForm(keycloakEndpoint+"/auth/realms/master/protocol/openid-connect/token", url.Values{
 		"client_id":         {clientId},
 		"client_secret":     {clientSecret},
