@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"sort"
 	"sync"
@@ -34,21 +35,41 @@ import (
 
 var PreliminaryLogTimeout = 10 * time.Second
 
+//func New(handler http.Handler) http.Handler {
+//	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+//		Level: slog.LevelInfo,
+//	})))
+//}
+//
+//func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
+//	if info, ok := debug.ReadBuildInfo(); ok {
+//		logger = logger.With("go-module", info.Path)
+//	}
+//	return &AccessLogMiddleware{
+//		handler:            handler,
+//		getCallSourceCache: map[string]string{},
+//		logger:             logger.With("snrgy-log-type", "http-access"),
+//		errorlogger:        logger.With("snrgy-log-type", "http-access-panic")}
+//}
+
 func New(handler http.Handler) http.Handler {
-	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 }
 
 func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
+	var organization, project string
 	if info, ok := debug.ReadBuildInfo(); ok {
-		logger = logger.With("go-module", info.Path)
+		organization, project = getMeta(info.Main.Path)
+	} else {
+		project = info.Main.Path
 	}
 	return &AccessLogMiddleware{
 		handler:            handler,
 		getCallSourceCache: map[string]string{},
-		logger:             logger.With("snrgy-log-type", "http-access"),
-		errorlogger:        logger.With("snrgy-log-type", "http-access-panic")}
+		logger:             logger.With("organization", organization, "project", project, "log_record_type", "http-access"),
+		errorlogger:        logger.With("organization", organization, "project", project, "log_record_type", "http-access-panic")}
 }
 
 type AccessLogMiddleware struct {
@@ -141,4 +162,16 @@ func (this *AccessLogMiddleware) getCallSource(req *http.Request) (result string
 	}
 
 	return result
+}
+
+var metaRegex = regexp.MustCompile(`(^[^/]+/[^/]+)/(.+$)`)
+
+func getMeta(v string) (organization, project string) {
+	if match := metaRegex.FindAllStringSubmatch(v, -1); len(match) > 0 {
+		if len(match[0]) == 3 {
+			organization = match[0][1]
+			project = match[0][2]
+		}
+	}
+	return
 }
