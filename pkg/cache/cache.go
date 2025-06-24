@@ -72,17 +72,97 @@ func New(config Config) (cache *Cache, err error) {
 }
 
 type Config struct {
-	L1                            CacheImpl                 //optional, defaults to localcache.Cache (or L1Provider if provided) with 60s cache duration and 1s cleanup interval
-	L1Provider                    func() (CacheImpl, error) //optional, may be used to create L1
-	L2                            CacheImpl                 //optional
-	L2Provider                    func() (CacheImpl, error) //optional, may be used to create L2
-	Fallback                      *fallback.Fallback        //optional, only used in Use() and UseWithExpInGet() as a fallback to the get parameter
-	FallbackProvider              func() (*fallback.Fallback, error)
-	Debug                         bool
-	ReadCacheHook                 func(duration time.Duration) //optional
-	CacheMissHook                 func()                       //optional
-	CacheInvalidationSignalHooks  map[Signal]ToKey
-	CacheInvalidationSignalBroker *signal.Broker //optional, defaults to signal.DefaultBroker if CacheInvalidationSignalHooks is used
+	//optional, defaults to localcache.Cache (or L1Provider if provided) with 60s cache duration and 1s cleanup interval
+	L1 CacheImpl
+
+	// optional, may be used to create L1
+	//
+	//example value:
+	//		localcache.NewProvider(10*time.Minute, 50*time.Millisecond)
+	L1Provider func() (CacheImpl, error)
+
+	//optional, second layer of cache, example: memcached
+	L2 CacheImpl
+
+	// optional, may be used to create L2
+	//
+	// example value:
+	//		memcached.NewProvider(10, 10*time.Second, memcachUrls...)
+	L2Provider func() (CacheImpl, error) //optional, may be used to create L2
+
+	// optional, only used in Use() and UseWithExpInGet() as a fallback to the get parameter in the Use function.
+	// use-case: service may lose internet connection -> store fallback on a local json file.
+	Fallback *fallback.Fallback
+
+	//optional, used to create Fallback
+	// use-case: service may lose internet connection -> store fallback on a local json file.
+	//
+	//example value:
+	//		fallback.NewProvider("/fb.json")
+	FallbackProvider func() (*fallback.Fallback, error)
+
+	Debug bool
+
+	//optional, may be used to accumulate statistics/metrics of the cache use
+	ReadCacheHook func(duration time.Duration)
+
+	//optional, may be used to accumulate statistics/metrics of the cache use
+	CacheMissHook func()
+
+	//optional, used in combination with a signal.Broker (optionally defined in CacheInvalidationSignalBroker). this map stores functions to translate a signal to a cache-key that should be invalidated/deleted.
+	// the ToKey function may be nil if the cache should be fully reset on receiving the signal.
+	//
+	//example:
+	//	c, err := cache.New(cache.Config{
+	//		CacheInvalidationSignalHooks: map[cache.Signal]cache.ToKey{
+	//			signal.Known.CacheInvalidationAll: nil,
+	//			signal.Known.ConceptCacheInvalidation: func(signalValue string) (cacheKey string) {
+	//				return "concept." + signalValue
+	//			},
+	//			signal.Known.CharacteristicCacheInvalidation: func(signalValue string) (cacheKey string) {
+	//				return "characteristics." + signalValue
+	//			},
+	//			signal.Known.FunctionCacheInvalidation: func(signalValue string) (cacheKey string) {
+	//				return "functions." + signalValue
+	//			},
+	//			signal.Known.AspectCacheInvalidation: nil, //invalidate everything, because an aspect corresponds to multiple aspect-nodes
+	//		},
+	//	})
+	//  if err != nil {
+	//		t.Error(err)
+	//		return
+	//	}
+	//
+	//  err = invalidator.StartKnownCacheInvalidators(ctx, kafka.Config{
+	//		KafkaUrl:      kafkaUrl,
+	//		ConsumerGroup: "test",
+	//		StartOffset:   kafka.LastOffset,
+	//		Wg:            wg,
+	//	}, invalidator.KnownTopics{
+	//		AspectTopic:			"aspects"
+	//		ConceptTopic: 			"concepts"
+	//		CharacteristicTopic:	"characteristics",
+	//		FunctionTopic: 			"functions",
+	//	}, nil)
+	//	if err != nil {
+	//		t.Error(err)
+	//		return
+	//	}
+	//
+	//  err = invalidator.StartCacheInvalidatorAll(ctx, kafka.Config{
+	//		KafkaUrl:      kafkaUrl,
+	//		ConsumerGroup: "test",
+	//		StartOffset:   kafka.LastOffset,
+	//		Wg:            wg,
+	//	}, []string{"topic-where-all-cache-should-be-reset"}, nil)
+	//	if err != nil {
+	//		t.Error(err)
+	//		return
+	//	}
+	CacheInvalidationSignalHooks map[Signal]ToKey
+
+	//optional, defaults to signal.DefaultBroker if CacheInvalidationSignalHooks is used
+	CacheInvalidationSignalBroker *signal.Broker
 }
 
 type Cache struct {
@@ -98,12 +178,18 @@ var ErrNotFound = cacheerrors.ErrNotFound
 
 type CacheImpl = interfaces.CacheImpl
 
+// Get retrieves values from the Cache, casts the value to the RESULT type and validates the result.
+// The 'validate' function parameter will be called at the end to ensure valid cache values. If the validation error is returned.
+// The validation prevents the use of stale or poisoned cache values.
+// If no validation is needed, the NoValidation[RESULT] function or nil can be used.
 // Get has to be a generic function because else we would lose the type information on l2 cache promotion to l2
 func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (item RESULT, err error) {
 	usedCache := "l1"
 	defer func() {
 		if err == nil {
-			err = validate(item)
+			if validate != nil {
+				err = validate(item)
+			}
 			if err != nil {
 				log.Printf("WARNING: invalidate %v cache because %v result is invalid (%v) (invalidate result=%v)\n", key, usedCache, err, cache.Remove(key))
 			}
@@ -151,6 +237,9 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 	return item, nil
 }
 
+// Set updates the Cache with the key/value pair:
+//   - 'exp' defines the time until the value is expired and cant be retrieved
+//   - 'l2Exp' (optional) is used to define a separate expiration date for the l2 cache (only used if Cache.l2 is set, only first value is used,if no l2Exp is set, the exp parameter is used)
 func (this *Cache) Set(key string, value interface{}, exp time.Duration, l2Exp ...time.Duration) (err error) {
 	err = this.l1.Set(key, value, exp)
 	if this.l2 != nil {

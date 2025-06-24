@@ -24,6 +24,7 @@ import (
 	"slices"
 )
 
+// StartKnownCacheInvalidators starts a kafka consumer, that sends signals (ref signal.Known) to 'broker' (signal.DefaultBroker if nil)
 func StartKnownCacheInvalidators(ctx context.Context, kafkaConf kafka.Config, knownTopics KnownTopics, broker *signal.Broker) error {
 	topics := slices.DeleteFunc([]string{
 		knownTopics.DeviceTopic,
@@ -48,6 +49,7 @@ func StartCacheInvalidatorDeviceType(ctx context.Context, kafkaConf kafka.Config
 	return StartCacheInvalidator(ctx, kafkaConf, []string{deviceTypeTopic}, GetCommandSignalMapper(signal.Known.DeviceTypeCacheInvalidation), broker)
 }
 
+// StartCacheInvalidatorAll starts a kafka consumer, that sends signal.Known.CacheInvalidationAll to 'broker' (signal.DefaultBroker if nil)
 func StartCacheInvalidatorAll(ctx context.Context, kafkaConf kafka.Config, topics []string, broker *signal.Broker) error {
 	if broker == nil {
 		broker = signal.DefaultBroker

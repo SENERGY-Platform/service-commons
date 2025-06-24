@@ -116,6 +116,9 @@ func GetCommandSignalMapper(sig signal.Signal) SignalMapper {
 	}
 }
 
+// StartCacheInvalidator starts a kafka consumer, that sends a signal.Signal to 'broker' (signal.DefaultBroker if nil).
+// the mapper SignalMapper parameter translates the received kafka messages to SignalInfo which describes the signals sent to the signal.Broker.
+// most applications should use StartKnownCacheInvalidators or StartCacheInvalidatorAll
 func StartCacheInvalidator(ctx context.Context, kafkaConf kafka.Config, topics []string, mapper SignalMapper, broker *signal.Broker) error {
 	if len(topics) == 0 {
 		return nil

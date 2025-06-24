@@ -23,6 +23,12 @@ import (
 	"time"
 )
 
+// Use tries to retrieve a key from the Cache and cast the result as T
+// if unsuccessful (because a cache-miss or a validation error) the cache is updated wit a value received from the 'get' function parameter
+// the 'exp' and 'l2Exp' parameters are passed to the Cache.Set method and define the expiration time of newly cached values
+//   - 'exp' defines the time until the value is expired and cant be retrieved
+//   - 'l2Exp' (optional) is used to define a separate expiration date for the l2 cache (only used if Cache.l2 is set, only first value is used,if no l2Exp is set, the exp parameter is used)
+//   - the 'validate' function parameter is passed to the Get function to prevent poisoned or stale cache values; if no validation is needed 'NoValidation[T]' or 'nil' may be used
 func Use[T any](cache *Cache, key string, get func() (T, error), validate func(T) error, exp time.Duration, l2Exp ...time.Duration) (result T, err error) {
 	if cache == nil {
 		return get()
@@ -66,6 +72,9 @@ func Use[T any](cache *Cache, key string, get func() (T, error), validate func(T
 	return result, nil
 }
 
+// UseWithExpInGet tries to retrieve a key from the Cache.
+// if unsuccessful (because of a cache-miss or a validation error) the cache is updated wit a value received from the 'get' function parameter.
+// the 'validate' function parameter is passed to the Get function to prevent poisoned or stale cache values.
 func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Duration, error), validate func(T) error, fallbackExp time.Duration) (result T, err error) {
 	if cache == nil {
 		result, _, err = get()
