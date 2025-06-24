@@ -62,6 +62,7 @@ func TestKafkaGroup(t *testing.T) {
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
+		InitTopic: true,
 	}
 
 	err = NewConsumer(ctx, kafkaConf, "test", func(delivery []byte) error {
@@ -134,6 +135,7 @@ func TestKafkaGroupPartitions(t *testing.T) {
 		KafkaUrl:      kafkaUrl,
 		ConsumerGroup: "test",
 		Debug:         true,
+		InitTopic:     true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -234,6 +236,7 @@ func TestKafkaGroupSubBalancer(t *testing.T) {
 		KafkaUrl:      kafkaUrl,
 		ConsumerGroup: "test",
 		Debug:         true,
+		InitTopic:     true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -331,8 +334,9 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 	}
 
 	producer, err := NewProducer(ctx, Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "test")
 	if err != nil {
 		t.Error(err)
@@ -360,6 +364,7 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 		ConsumerGroup: "test",
 		StartOffset:   LastOffset,
 		Wg:            wg,
+		InitTopic:     true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
@@ -404,6 +409,7 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 		ConsumerGroup: "test",
 		StartOffset:   LastOffset,
 		Wg:            wg,
+		InitTopic:     true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()

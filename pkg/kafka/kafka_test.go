@@ -57,8 +57,9 @@ func TestKafka(t *testing.T) {
 	wait := sync.WaitGroup{}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:  kafkaUrl,
+		Debug:     true,
+		InitTopic: true,
 		TimeNow: func() time.Time {
 			return time.Now() //time.Time{}
 		},
@@ -131,8 +132,9 @@ func TestKafkaPartitions(t *testing.T) {
 	}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:  kafkaUrl,
+		Debug:     true,
+		InitTopic: true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -231,8 +233,9 @@ func TestKafkaSubBalancer(t *testing.T) {
 	}
 
 	kafkaConf := Config{
-		KafkaUrl: kafkaUrl,
-		Debug:    true,
+		KafkaUrl:  kafkaUrl,
+		Debug:     true,
+		InitTopic: true,
 		TimeNow: func() time.Time {
 			return time.Time{}
 		},
@@ -330,8 +333,9 @@ func TestKafkaLastOffset(t *testing.T) {
 	}
 
 	producer, err := NewProducer(ctx, Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "test")
 	if err != nil {
 		t.Error(err)
@@ -358,6 +362,7 @@ func TestKafkaLastOffset(t *testing.T) {
 		KafkaUrl:    kafkaUrl,
 		StartOffset: LastOffset,
 		Wg:          wg,
+		InitTopic:   true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
@@ -401,6 +406,7 @@ func TestKafkaLastOffset(t *testing.T) {
 		KafkaUrl:    kafkaUrl,
 		StartOffset: LastOffset,
 		Wg:          wg,
+		InitTopic:   true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()

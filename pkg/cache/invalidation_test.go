@@ -74,6 +74,7 @@ func TestInvalidation(t *testing.T) {
 		ConsumerGroup: "test",
 		StartOffset:   kafka.LastOffset,
 		Wg:            wg,
+		InitTopic:     true,
 	}, invalidator.KnownTopics{
 		DeviceTopic:     "devices",
 		DeviceTypeTopic: "device-types",
@@ -88,6 +89,7 @@ func TestInvalidation(t *testing.T) {
 		ConsumerGroup: "test",
 		StartOffset:   kafka.LastOffset,
 		Wg:            wg,
+		InitTopic:     true,
 	}, []string{"all"}, nil)
 	if err != nil {
 		t.Error(err)
@@ -139,24 +141,27 @@ func TestInvalidation(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	allProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "all")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	deviceTypeProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "device-types")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	deviceProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "devices")
 	if err != nil {
 		t.Error(err)
@@ -264,6 +269,7 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		KafkaUrl:    kafkaUrl,
 		StartOffset: kafka.LastOffset,
 		Wg:          wg,
+		InitTopic:   true,
 	}, invalidator.KnownTopics{
 		DeviceTopic:     "devices",
 		DeviceTypeTopic: "device-types",
@@ -277,6 +283,7 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		KafkaUrl:    kafkaUrl,
 		StartOffset: kafka.LastOffset,
 		Wg:          wg,
+		InitTopic:   true,
 	}, []string{"all"}, nil)
 	if err != nil {
 		t.Error(err)
@@ -328,24 +335,27 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	allProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "all")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	deviceTypeProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "device-types")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	deviceProducer, err := kafka.NewProducer(ctx, kafka.Config{
-		KafkaUrl: kafkaUrl,
-		Wg:       wg,
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
 	}, "devices")
 	if err != nil {
 		t.Error(err)

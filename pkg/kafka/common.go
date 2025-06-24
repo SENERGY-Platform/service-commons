@@ -33,6 +33,7 @@ type Config struct {
 	Wg                     *sync.WaitGroup  //optional
 	PartitionWatchInterval time.Duration    //defaults to time.Minute
 	OnError                func(error)      //defaults to log.Fatal
+	InitTopic              bool
 }
 
 const LastOffset = kafka.LastOffset

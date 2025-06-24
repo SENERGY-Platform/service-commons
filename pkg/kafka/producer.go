@@ -41,10 +41,12 @@ func NewProducerWithKeySeparationBalancer(ctx context.Context, config Config, to
 
 func NewProducerWithBalancer(ctx context.Context, config Config, topic string, balancer kafka.Balancer) (*Producer, error) {
 	result := &Producer{ctx: ctx}
-	err := InitTopic(config.KafkaUrl, topic)
-	if err != nil {
-		log.Println("ERROR: unable to create topic", err)
-		return nil, err
+	if config.InitTopic {
+		err := InitTopic(config.KafkaUrl, topic)
+		if err != nil {
+			log.Println("ERROR: unable to create topic", err)
+			return nil, err
+		}
 	}
 
 	var logger kafka.Logger

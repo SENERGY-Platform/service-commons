@@ -56,11 +56,13 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 	if config.OnError == nil {
 		config.OnError = func(err error) { log.Fatal("ERROR:", err) }
 	}
-	for _, topic := range topics {
-		err = InitTopic(config.KafkaUrl, topic)
-		if err != nil {
-			log.Println("ERROR: unable to create topic", err)
-			return err
+	if config.InitTopic {
+		for _, topic := range topics {
+			err = InitTopic(config.KafkaUrl, topic)
+			if err != nil {
+				log.Println("ERROR: unable to create topic", err)
+				return err
+			}
 		}
 	}
 	if config.ConsumerGroup == "" {
