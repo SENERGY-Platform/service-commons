@@ -36,6 +36,14 @@ func GetParsedToken(req *http.Request) (token Token, err error) {
 	return Parse(GetAuthToken(req))
 }
 
+func GetParsedAndValidatedToken(certProvider *KeycloakCertProvider, req *http.Request) (token Token, err error) {
+	token, ok := GetTokenFromContext(req.Context())
+	if ok {
+		return token, nil
+	}
+	return ParseWithValidation(certProvider, GetAuthToken(req))
+}
+
 func GetAuthToken(req *http.Request) string {
 	return req.Header.Get("Authorization")
 }
@@ -49,6 +57,26 @@ func Parse(token string) (claims Token, err error) {
 		token = token[7:]
 	}
 	_, _, err = new(jwt.Parser).ParseUnverified(token, &claims)
+	if err == nil {
+		claims.Token = orig
+	} else {
+		err = fmt.Errorf("%w: %v", ErrInvalidAuth, err.Error())
+	}
+	return
+}
+
+func ParseWithValidation(certProvider *KeycloakCertProvider, token string) (claims Token, err error) {
+	if token == "" {
+		return claims, ErrMissingAuthToken
+	}
+	if certProvider == nil {
+		return claims, errors.New("missing cert provider")
+	}
+	orig := token
+	if len(token) > 7 && strings.ToLower(token[:7]) == "bearer " {
+		token = token[7:]
+	}
+	_, err = new(jwt.Parser).ParseWithClaims(token, &claims, certProvider.GetKeycloakCert)
 	if err == nil {
 		claims.Token = orig
 	} else {
