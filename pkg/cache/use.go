@@ -18,10 +18,53 @@ package cache
 
 import (
 	"fmt"
-	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
 	"log"
 	"time"
+
+	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
 )
+
+// UseWithAsyncRefresh returns value from cache/fallback and later tries to update cache from source
+func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error), validate func(T) error, exp time.Duration, l2Exp ...time.Duration) (result T, err error) {
+	if cache == nil {
+		return get()
+	}
+	var temp interface{}
+	var ok bool
+	temp, err = Get[T](cache, key, validate)
+	if err == nil {
+		result, ok = temp.(T)
+		if ok {
+			return result, nil
+		} else {
+			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
+		}
+	}
+	go func() {
+		//try cache refresh but use the fallback file in the meantime
+		result, err = get()
+		if err != nil {
+			log.Println("WARNING: unable to refresh cache value", err)
+			return
+		}
+		cache.Set(key, result, exp, l2Exp...)
+		if cache.fallback != nil {
+			cache.fallback.Set(key, result)
+		}
+	}()
+	if cache.fallback != nil {
+		temp, err = fallback.Get[T](cache.fallback, key)
+		if err != nil {
+			return result, err
+		}
+		result, ok = temp.(T)
+		if !ok {
+			err = fmt.Errorf("WARNING: fallback value is of unexpected type: got %#v, want %#v", temp, result)
+		}
+		return result, err
+	}
+	return get()
+}
 
 // Use tries to retrieve a key from the Cache and cast the result as T
 // if unsuccessful (because a cache-miss or a validation error) the cache is updated wit a value received from the 'get' function parameter
