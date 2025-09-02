@@ -60,7 +60,7 @@ func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error),
 		}
 		result, ok = temp.(T)
 		if !ok {
-			log.Println("WARNING: fallback value is of unexpected type: got %#v, want %#v", temp, result)
+			log.Printf("WARNING: fallback value is of unexpected type: got %#v, want %#v", temp, result)
 			return get()
 		}
 		return result, nil
