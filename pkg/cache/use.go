@@ -37,14 +37,14 @@ func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error),
 		if ok {
 			return result, nil
 		} else {
-			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
+			log.Printf("WARNING: cached value is of unexpected type: key: %v got %#v, want %#v", key, temp, result)
 		}
 	}
 	go func() {
 		//try cache refresh but use the fallback file in the meantime
 		result, err = get()
 		if err != nil {
-			log.Println("WARNING: unable to refresh cache value", err)
+			log.Println("WARNING: unable to refresh cache value", key, err)
 			return
 		}
 		cache.Set(key, result, exp, l2Exp...)
@@ -55,12 +55,12 @@ func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error),
 	if cache.fallback != nil {
 		temp, err = fallback.Get[T](cache.fallback, key)
 		if err != nil {
-			log.Println("WARNING: unable to get value from fallback", err)
+			log.Println("WARNING: unable to get value from fallback", key, err)
 			return get()
 		}
 		result, ok = temp.(T)
 		if !ok {
-			log.Printf("WARNING: fallback value is of unexpected type: got %#v, want %#v", temp, result)
+			log.Printf("WARNING: fallback value is of unexpected type: key: %v got %#v, want %#v", key, temp, result)
 			return get()
 		}
 		if _, _, err = cache.l1.Get(key); err != nil {
