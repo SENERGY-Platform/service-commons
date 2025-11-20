@@ -18,11 +18,12 @@ package kafka
 
 import (
 	"context"
-	"github.com/segmentio/kafka-go"
 	"log"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/segmentio/kafka-go"
 )
 
 type Producer struct {

@@ -20,12 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
 )
 
 func TestKafka(t *testing.T) {
@@ -35,15 +36,7 @@ func TestKafka(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -117,15 +110,7 @@ func TestKafkaPartitions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -147,6 +132,8 @@ func TestKafkaPartitions(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(2 * time.Second)
 
 	keys := []string{"a", "b", "c", "d", "e", "f", "g"}
 
@@ -218,15 +205,7 @@ func TestKafkaSubBalancer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -248,6 +227,8 @@ func TestKafkaSubBalancer(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(2 * time.Second)
 
 	keys := []string{"foo/a", "foo/b", "bar/c", "foo/d", "bar/e", "bar/f", "foo/g"}
 
@@ -318,15 +299,7 @@ func TestKafkaLastOffset(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return

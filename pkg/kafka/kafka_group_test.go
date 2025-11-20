@@ -19,12 +19,15 @@ package kafka
 import (
 	"context"
 	"encoding/json"
-	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
+	"fmt"
+	"log"
 	"reflect"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
 )
 
 func TestKafkaGroup(t *testing.T) {
@@ -34,15 +37,7 @@ func TestKafkaGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -117,15 +112,7 @@ func TestKafkaGroupPartitions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -149,6 +136,8 @@ func TestKafkaGroupPartitions(t *testing.T) {
 		return
 	}
 
+	time.Sleep(2 * time.Second)
+
 	keys := []string{"a", "b", "c", "d", "e", "f", "g"}
 
 	//key -> partition -> count
@@ -156,6 +145,8 @@ func TestKafkaGroupPartitions(t *testing.T) {
 	mux := sync.Mutex{}
 
 	wait := sync.WaitGroup{}
+
+	consumercount := 0
 
 	err = NewMultiConsumer(ctx, kafkaConf, []string{"test"}, func(delivery Message) error {
 		mux.Lock()
@@ -170,6 +161,8 @@ func TestKafkaGroupPartitions(t *testing.T) {
 		}
 		consumed[key][partition] = consumed[key][partition] + 1
 		wait.Done()
+		consumercount++
+		fmt.Println("consume", key, partition, consumercount)
 		return nil
 	})
 
@@ -184,10 +177,13 @@ func TestKafkaGroupPartitions(t *testing.T) {
 		return
 	}
 
+	prodcount := 0
 	for i := 0; i < 100; i++ {
 		for _, key := range keys {
 			wait.Add(1)
 			err = producer.Produce(key, []byte("foo"))
+			prodcount++
+			log.Println("produce", key, prodcount, err)
 			if err != nil {
 				t.Error(err)
 				return
@@ -218,15 +214,7 @@ func TestKafkaGroupSubBalancer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -249,6 +237,8 @@ func TestKafkaGroupSubBalancer(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(2 * time.Second)
 
 	keys := []string{"foo/a", "foo/b", "bar/c", "foo/d", "bar/e", "bar/f", "foo/g"}
 
@@ -319,15 +309,7 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return

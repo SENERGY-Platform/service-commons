@@ -17,35 +17,43 @@
 package signal
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
+	"testing"
 	"time"
 )
 
-func ExampleSubWg() {
+func TestSubWg(t *testing.T) {
+	buf := bytes.NewBuffer(nil)
 	Known.DeviceTypeCacheInvalidation.Sub("", func(value string, _ *sync.WaitGroup) {
 		time.Sleep(200 * time.Millisecond)
-		fmt.Println("bar", value)
+		fmt.Fprintln(buf, "bar", value)
 	})
 	Known.DeviceTypeCacheInvalidation.Sub("", func(value string, wg *sync.WaitGroup) {
 		go func() {
 			wg.Wait()
-			fmt.Println("batz", value)
+			fmt.Fprintln(buf, "batz", value)
 		}()
 	})
 	Known.DeviceTypeCacheInvalidation.Sub("", func(value string, _ *sync.WaitGroup) {
-		fmt.Println("blub", value)
+		fmt.Fprintln(buf, "blub", value)
 	})
 	Known.DeviceTypeCacheInvalidation.Sub("", func(value string, _ *sync.WaitGroup) {
 		time.Sleep(100 * time.Millisecond)
-		fmt.Println("foo", value)
+		fmt.Fprintln(buf, "foo", value)
 	})
 	Known.DeviceTypeCacheInvalidation.Pub("42")
 	time.Sleep(time.Second)
 
-	//output:
-	//blub 42
-	//foo 42
-	//bar 42
-	//batz 42
+	expected := `blub 42
+foo 42
+bar 42
+batz 42
+`
+
+	actual := buf.String()
+	if actual != expected {
+		t.Error(actual)
+	}
 }

@@ -18,13 +18,14 @@ package cache
 
 import (
 	"context"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/invalidator"
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
 	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
-	"sync"
-	"testing"
-	"time"
 )
 
 func TestInvalidation(t *testing.T) {
@@ -39,15 +40,7 @@ func TestInvalidation(t *testing.T) {
 		signal.DefaultBroker.Debug = false
 	}()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return
@@ -235,15 +228,7 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		signal.DefaultBroker.Debug = false
 	}()
 
-	_, zkIp, err := docker.Zookeeper(ctx, wg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	zkUrl := zkIp + ":2181"
-
-	//kafka
-	kafkaUrl, err := docker.Kafka(ctx, wg, zkUrl)
+	kafkaUrl, err := docker.Kafka(ctx, wg)
 	if err != nil {
 		t.Error(err)
 		return

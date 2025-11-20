@@ -17,11 +17,12 @@
 package kafka
 
 import (
-	"github.com/segmentio/kafka-go"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/segmentio/kafka-go"
 )
 
 type Config struct {
