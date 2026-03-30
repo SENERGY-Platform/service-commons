@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"io"
 	"log/slog"
 	"net"
@@ -29,8 +28,12 @@ import (
 	"regexp"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"time"
+
+	struct_logger "github.com/SENERGY-Platform/go-service-base/struct-logger"
+	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 )
 
 var PreliminaryLogTimeout = 10 * time.Second
@@ -52,10 +55,24 @@ var PreliminaryLogTimeout = 10 * time.Second
 //		errorlogger:        logger.With("snrgy-log-type", "http-access-panic")}
 //}
 
-func New(handler http.Handler) http.Handler {
-	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+func New(handler http.Handler, options ...Options) http.Handler {
+	loghandler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
-	})))
+	})
+	logger := slog.New(loghandler)
+	if len(options) > 0 && options[0].TrimFormat != "" {
+		trimAttributes := []string{}
+		if options[0].TrimAttributes != "" {
+			trimAttributes = strings.Split(options[0].TrimAttributes, ",")
+		}
+		trimHandler, err := struct_logger.ApplyTrimFormat(loghandler, options[0].TrimFormat, trimAttributes)
+		if err != nil {
+			logger.Error("unable to apply trim format to logger -> use logger without trim", "error", err)
+		} else {
+			logger = slog.New(trimHandler)
+		}
+	}
+	return NewWithLogger(handler, logger)
 }
 
 func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
@@ -70,6 +87,11 @@ func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
 		getCallSourceCache: map[string]string{},
 		logger:             logger.With("organization", organization, "project", project, "log_record_type", "http-access"),
 		errorlogger:        logger.With("organization", organization, "project", project, "log_record_type", "http-access-panic")}
+}
+
+type Options struct {
+	TrimFormat     string `json:"trim_format" env_var:"LOGGER_TRIM_FORMAT"`         //e.g. "20:[...]:10"; by default only used on the log message. if attributes should be trimmed, add them to TrimAttributes
+	TrimAttributes string `json:"trim_attributes" env_var:"LOGGER_TRIM_ATTRIBUTES"` //comma seperated list of attribute keys that should also be trimmed
 }
 
 type AccessLogMiddleware struct {
