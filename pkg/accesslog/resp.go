@@ -16,7 +16,12 @@
 
 package accesslog
 
-import "net/http"
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"net/http"
+)
 
 func NewResponse(w http.ResponseWriter) *Response {
 	return &Response{w: w, StatusCode: 200}
@@ -25,6 +30,14 @@ func NewResponse(w http.ResponseWriter) *Response {
 type Response struct {
 	StatusCode int
 	w          http.ResponseWriter
+}
+
+func (this *Response) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	w, ok := this.w.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("unable to cast ResponseWriter to http.Hijacker")
+	}
+	return w.Hijack()
 }
 
 func (this *Response) Header() http.Header {
