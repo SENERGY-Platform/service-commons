@@ -19,13 +19,15 @@ package cache
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
+	"time"
+
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/cacheerrors"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/interfaces"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/localcache"
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
-	"log"
-	"time"
 )
 
 func New(config Config) (cache *Cache, err error) {
@@ -191,7 +193,7 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 				err = validate(item)
 			}
 			if err != nil {
-				log.Printf("WARNING: invalidate %v cache because %v result is invalid (%v) (invalidate result=%v)\n", key, usedCache, err, cache.Remove(key))
+				slog.Warn(fmt.Sprintf("WARNING: invalidate %v cache because %v result is invalid (%v) (invalidate result=%v)", key, usedCache, err, cache.Remove(key)))
 			}
 		}
 	}()
@@ -218,9 +220,7 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 	if cache.l2 == nil {
 		return item, err
 	}
-	if cache.debug {
-		log.Println("DEBUG: use l2 cache", key, err)
-	}
+	slog.Debug("use l2 cache", "key", key, "error", err)
 	var exp time.Duration
 	usedCache = "l2"
 	temp, resultType, exp, err = cache.l2.GetWithExpiration(key)
@@ -291,7 +291,7 @@ func cast[RESULT any](item interface{}, resultType interfaces.ResultType) (resul
 	var ok bool
 	result, ok = item.(RESULT)
 	if !ok {
-		log.Printf("WARNING: cached value is of unexpected type: got %T, want %T\n", item, result)
+		slog.Warn(fmt.Sprintf("cached value is of unexpected type: got %T, want %T", item, result))
 		return jsonCast[RESULT](item)
 	}
 	return result, nil

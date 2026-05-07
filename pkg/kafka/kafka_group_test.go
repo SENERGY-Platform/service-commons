@@ -325,6 +325,8 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 		return
 	}
 
+	time.Sleep(1 * time.Second)
+
 	err = producer.Produce("test", []byte("1"))
 	if err != nil {
 		t.Error(err)

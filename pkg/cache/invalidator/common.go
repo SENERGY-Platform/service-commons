@@ -21,9 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+
 	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
 	"github.com/SENERGY-Platform/service-commons/pkg/signal"
-	"log"
 )
 
 type KnownTopics struct {
@@ -57,7 +58,7 @@ func GetKnownSignalMapper(topics KnownTopics) SignalMapper {
 		cmd := Command{}
 		err := json.Unmarshal(msg.Value, &cmd)
 		if err != nil {
-			log.Printf("ERROR: unable to interpret message for cache invalidation on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value))
+			slog.Error(fmt.Sprintf("unable to interpret message for cache invalidation on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value)), "error", err)
 			return nil
 		}
 		var sig signal.Signal
@@ -86,7 +87,7 @@ func GetKnownSignalMapper(topics KnownTopics) SignalMapper {
 			sig = signal.Known.LocationInvalidation
 		default:
 			sig = signal.Known.GenericCacheInvalidation
-			log.Println("WARNING: unknown topic to map in GetKnownSignalMapper()", msg.Topic)
+			slog.Warn("unknown topic to map in GetKnownSignalMapper()", "topic", msg.Topic)
 		}
 		if cmd.Id != "" {
 			return []SignalInfo{{
@@ -103,7 +104,7 @@ func GetCommandSignalMapper(sig signal.Signal) SignalMapper {
 		cmd := Command{}
 		err := json.Unmarshal(msg.Value, &cmd)
 		if err != nil {
-			log.Printf("ERROR: unable to interpret message for cache invalidation on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value))
+			slog.Error(fmt.Sprintf("unable to interpret message for cache invalidation on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value)), "error", err)
 			return nil
 		}
 		if cmd.Command == "PUT" {

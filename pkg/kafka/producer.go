@@ -18,8 +18,7 @@ package kafka
 
 import (
 	"context"
-	"log"
-	"os"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -45,22 +44,27 @@ func NewProducerWithBalancer(ctx context.Context, config Config, topic string, b
 	if config.InitTopic {
 		err := InitTopic(config.KafkaUrl, topic)
 		if err != nil {
-			log.Println("ERROR: unable to create topic", err)
+			slog.Error("unable to create topic", "error", err, "topic", topic)
 			return nil, err
 		}
 	}
 
 	var logger kafka.Logger
 	if config.Debug {
-		logger = log.New(os.Stdout, "KAFKA", 0)
+		l := slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug)
+		l.SetPrefix("KAFKA")
+		logger = l
 	}
+
+	errLogger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
+	errLogger.SetPrefix("KAFKA")
 
 	result.writer = &kafka.Writer{
 		Addr:        kafka.TCP(config.KafkaUrl),
 		Topic:       topic,
 		Async:       false,
 		Logger:      logger,
-		ErrorLogger: log.New(os.Stderr, "KAFKA", 0),
+		ErrorLogger: errLogger,
 		MaxAttempts: 10,
 		BatchSize:   1,
 		Balancer:    balancer,

@@ -18,11 +18,12 @@ package signal
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"log"
+	"log/slog"
 	"runtime/debug"
 	"slices"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type Broker struct {
@@ -48,13 +49,11 @@ func (this *Broker) Pub(signal Signal, value string) {
 	}
 	for _, sub := range this.subscriptions {
 		if sub.Signal == signal {
-			if this.Debug {
-				log.Println("DEBUG: send signal", sub.Id, signal, value)
-			}
+			slog.Debug("send signal", "id", sub.Id, "signal", signal, "value", value)
 			go func(f func(value string, wg *sync.WaitGroup)) {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Println("ERROR:", r)
+						slog.Error("panic in signal handler", "subId", sub.Id, "signal", signal, "value", value, "error", r)
 						debug.PrintStack()
 					}
 				}()
@@ -71,7 +70,7 @@ func (this *Broker) Pub(signal Signal, value string) {
 func (this *Broker) Sub(id string, signal Signal, f func(value string, wg *sync.WaitGroup)) string {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("ERROR:", r)
+			slog.Error("panic in signal subscription", "signal", signal, "error", r)
 			debug.PrintStack()
 		}
 	}()

@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"time"
@@ -38,7 +38,7 @@ func ExchangeUserToken(keycloakEndpoint, clientId, clientSecret, userId string) 
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		log.Println("ERROR: GetUserToken()", resp.StatusCode, string(body))
+		slog.Error("GetUserToken()", "status", resp.StatusCode, "error", string(body))
 		err = errors.New("access denied")
 		resp.Body.Close()
 		return

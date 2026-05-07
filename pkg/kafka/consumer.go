@@ -20,15 +20,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/IBM/sarama"
-	"github.com/segmentio/kafka-go"
 	"io"
 	"log"
-	"os"
+	"log/slog"
 	"runtime/debug"
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/IBM/sarama"
+	"github.com/segmentio/kafka-go"
 )
 
 func NewConsumer(ctx context.Context, config Config, topic string, listener func(delivery []byte) error) error {
@@ -54,13 +55,16 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 		config.PartitionWatchInterval = time.Minute
 	}
 	if config.OnError == nil {
-		config.OnError = func(err error) { log.Fatal("ERROR:", err) }
+		config.OnError = func(err error) {
+			slog.Error("fatal kafka error", "error", err)
+			log.Fatal("ERROR:", err)
+		}
 	}
 	if config.InitTopic {
 		for _, topic := range topics {
 			err = InitTopic(config.KafkaUrl, topic)
 			if err != nil {
-				log.Println("ERROR: unable to create topic", err)
+				slog.Error("unable to create topic", "error", err)
 				return err
 			}
 		}
@@ -84,6 +88,9 @@ func newKafkaGoConsumer(ctx context.Context, config Config, topics []string, lis
 
 	startTime := time.Now()
 
+	logger := slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
+	logger.SetPrefix("[KAFKA-ERR] ")
+
 	r := kafka.NewReader(kafka.ReaderConfig{
 		StartOffset:            config.StartOffset,
 		CommitInterval:         0, //synchronous commits
@@ -93,7 +100,7 @@ func newKafkaGoConsumer(ctx context.Context, config Config, topics []string, lis
 		Topic:                  topic,
 		MaxWait:                1 * time.Second,
 		Logger:                 log.New(io.Discard, "", 0),
-		ErrorLogger:            log.New(os.Stdout, "[KAFKA-ERR] ", log.LstdFlags),
+		ErrorLogger:            logger,
 		WatchPartitionChanges:  true,
 		PartitionWatchInterval: config.PartitionWatchInterval,
 	})
@@ -105,14 +112,15 @@ func newKafkaGoConsumer(ctx context.Context, config Config, topics []string, lis
 			defer config.Wg.Done()
 		}
 		defer r.Close()
-		defer log.Println("close consumer for topic ", topic)
+		defer slog.Info("close kafka-go consumer", "topic", topic)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			default:
 				m, err := r.FetchMessage(ctx)
-				if err == io.EOF || err == context.Canceled {
+				slog.Debug("fetch kafka message", "topic", topic, "partition", m.Partition, "offset", m.Offset, "key", string(m.Key), "value", string(m.Value), "error", err)
+				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 					return
 				}
 				if err != nil {
@@ -185,7 +193,7 @@ func newSaramaConsumer(ctx context.Context, config Config, topics []string, list
 		}
 		<-ctx.Done()
 		partitionWg.Wait()
-		log.Printf("close consumer for topics=%v err=%v\n", topics, client.Close())
+		slog.Info("close sarama kafka consumer", "topics", topics, "result", client.Close())
 	}()
 
 	mux := sync.Mutex{}
@@ -206,13 +214,13 @@ func newSaramaConsumer(ctx context.Context, config Config, topics []string, list
 				partitionWg.Add(1)
 				go func() {
 					<-ctx.Done()
-					defer log.Printf("closing consumer for topic=%v partition=%v err=%v\n", topic, partition, consumer.Close())
+					defer slog.Info("close sarama kafka consumer (ctx.done)", "topic", topic, "partition", partition, "result", consumer.Close())
 				}()
 
 				go func(topic string, partition int32, consumer sarama.PartitionConsumer) {
-					log.Printf("consume topic=%v partition=%v\n", topic, partition)
+					slog.Info("start sarama kafka consumer", "topic", topic, "partition", partition)
 					defer partitionWg.Done()
-					defer log.Printf("closed consumer for topic=%v partition=%v\n", topic, partition)
+					defer slog.Info("close sarama kafka consumer", "topic", topic, "partition", partition)
 					for {
 						select {
 						case <-ctx.Done():
@@ -229,8 +237,8 @@ func newSaramaConsumer(ctx context.Context, config Config, topics []string, list
 							if !ok {
 								return
 							}
-							if config.Debug && msg != nil {
-								log.Printf("DEBUG: receive topic=%v partition=%v key=%v message=%v\n", topic, partition, string(msg.Key), string(msg.Value))
+							if msg != nil {
+								slog.Debug("receive kafka message", "topic", topic, "partition", partition, "offset", msg.Offset, "key", string(msg.Key), "value", string(msg.Value))
 							}
 							if msg != nil {
 								err = retry(func() error {
@@ -286,7 +294,7 @@ func newSaramaConsumer(ctx context.Context, config Config, topics []string, list
 				case <-ticker.C:
 					err = updatePartitions(topics)
 					if err != nil {
-						log.Println("ERROR: unable to update partition info", err)
+						slog.Error("unable to update partition info", "error", err)
 					}
 				}
 			}
@@ -302,10 +310,10 @@ func retry(f func() error, waitProvider func(n int64) time.Duration, timeout tim
 	for i := int64(1); err != nil && time.Since(start) < timeout; i++ {
 		err = f()
 		if err != nil {
-			log.Println("ERROR: kafka listener error:", err)
+			slog.Error("kafka listener error", "error", err)
 			wait := waitProvider(i)
 			if time.Since(start)+wait < timeout {
-				log.Println("ERROR: retry after:", wait.String())
+				slog.Error("kafka listener error --> retry", "error", err, "wait", wait.String(), "first-try-time", start.String())
 				time.Sleep(wait)
 			} else {
 				return err

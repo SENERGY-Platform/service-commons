@@ -18,7 +18,7 @@ package cache
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/fallback"
@@ -37,14 +37,14 @@ func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error),
 		if ok {
 			return result, nil
 		} else {
-			log.Printf("WARNING: cached value is of unexpected type: key: %v got %#v, want %#v", key, temp, result)
+			slog.Warn(fmt.Sprintf("cached value is of unexpected type: key: %v got %#v, want %#v", key, temp, result))
 		}
 	}
 	go func() {
 		//try cache refresh but use the fallback file in the meantime
 		result, err = get()
 		if err != nil {
-			log.Println("WARNING: unable to refresh cache value", key, err)
+			slog.Warn("unable to refresh cache value", "key", key, "error", err)
 			return
 		}
 		cache.Set(key, result, exp, l2Exp...)
@@ -55,12 +55,12 @@ func UseWithAsyncRefresh[T any](cache *Cache, key string, get func() (T, error),
 	if cache.fallback != nil {
 		temp, err = fallback.Get[T](cache.fallback, key)
 		if err != nil {
-			log.Println("WARNING: unable to get value from fallback", key, err)
+			slog.Warn("unable to get value from fallback", "key", key, "error", err)
 			return get()
 		}
 		result, ok = temp.(T)
 		if !ok {
-			log.Printf("WARNING: fallback value is of unexpected type: key: %v got %#v, want %#v", key, temp, result)
+			slog.Warn(fmt.Sprintf("fallback value is of unexpected type: key: %v got %#v, want %#v", key, temp, result))
 			return get()
 		}
 		if _, _, err = cache.l1.Get(key); err != nil {
@@ -89,7 +89,7 @@ func Use[T any](cache *Cache, key string, get func() (T, error), validate func(T
 		if ok {
 			return result, nil
 		} else {
-			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
+			slog.Warn(fmt.Sprintf("cached value is of unexpected type: got %#v, want %#v", temp, result))
 		}
 	}
 	result, err = get()
@@ -112,7 +112,7 @@ func Use[T any](cache *Cache, key string, get func() (T, error), validate func(T
 			err = cache.fallback.Set(key, result)
 		}
 		if err != nil {
-			log.Println("WARNING: unable to store value in fallback storage", err)
+			slog.Warn("unable to store value in fallback storage", "error", err)
 			err = nil
 		}
 	}
@@ -136,7 +136,7 @@ func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Durati
 		if ok {
 			return result, nil
 		} else {
-			log.Printf("WARNING: cached value is of unexpected type: got %#v, want %#v", temp, result)
+			slog.Warn(fmt.Sprintf("cached value is of unexpected type: got %#v, want %#v", temp, result))
 		}
 	}
 	var exp time.Duration
@@ -160,7 +160,7 @@ func UseWithExpInGet[T any](cache *Cache, key string, get func() (T, time.Durati
 			err = cache.fallback.Set(key, result)
 		}
 		if err != nil {
-			log.Println("WARNING: unable to store value in fallback storage", err)
+			slog.Warn("unable to store value in fallback storage", "error", err)
 			err = nil
 		}
 	}

@@ -21,11 +21,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
-	"github.com/SENERGY-Platform/service-commons/pkg/signal"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
+
+	"github.com/SENERGY-Platform/service-commons/pkg/kafka"
+	"github.com/SENERGY-Platform/service-commons/pkg/signal"
 )
 
 type DoneMsg struct {
@@ -47,7 +48,7 @@ func StartDoneWaitListener(ctx context.Context, kafkaConf kafka.Config, topics [
 		doneMsg := DoneMsg{}
 		err := json.Unmarshal(msg.Value, &doneMsg)
 		if err != nil {
-			log.Printf("ERROR: unable to interpret message for done wait on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value))
+			slog.Error(fmt.Sprintf("unable to interpret message for done wait on topic %v: %v \nmessage = %v", msg.Topic, err, string(msg.Value)), "error", err)
 			return nil
 		}
 		broker.Pub(signal.Known.UpdateDone, SerializeDoneMsg(doneMsg))

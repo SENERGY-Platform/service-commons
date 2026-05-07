@@ -18,6 +18,8 @@ package cache
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -223,6 +225,8 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+
 	signal.DefaultBroker.Debug = true
 	defer func() {
 		signal.DefaultBroker.Debug = false
@@ -233,6 +237,8 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(2 * time.Second)
 
 	cache, err := New(Config{
 		Debug: true,
@@ -249,6 +255,8 @@ func TestInvalidationNoConsumerGroup(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	slog.Info("start cache invalidators")
 
 	err = invalidator.StartKnownCacheInvalidators(ctx, kafka.Config{
 		KafkaUrl:    kafkaUrl,

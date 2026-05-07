@@ -4,14 +4,61 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/segmentio/kafka-go"
-	kafka_test "github.com/testcontainers/testcontainers-go/modules/kafka"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func Kafka(ctx context.Context, wg *sync.WaitGroup) (kafkaUrl string, err error) {
-	c, err := kafka_test.Run(ctx, "confluentinc/confluent-local:7.5.0")
+	kafkaport, err := GetFreePort()
+	if err != nil {
+		return kafkaUrl, err
+	}
+	provider, err := testcontainers.NewDockerProvider(testcontainers.DefaultNetwork("bridge"))
+	if err != nil {
+		return kafkaUrl, err
+	}
+	hostIp, err := provider.GetGatewayIP(ctx)
+	if err != nil {
+		return kafkaUrl, err
+	}
+	kafkaUrl = hostIp + ":" + strconv.Itoa(kafkaport)
+	log.Println("host ip: ", hostIp)
+	log.Println("host port: ", kafkaport)
+	log.Println("kafkaUrl url: ", kafkaUrl)
+	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image: "apache/kafka:3.9.1",
+			Tmpfs: map[string]string{},
+			WaitingFor: wait.ForAll(
+				wait.ForLog("INFO Awaiting socket connections on"),
+				wait.ForListeningPort("9092/tcp"),
+			),
+			ExposedPorts:    []string{strconv.Itoa(kafkaport) + ":9092"},
+			AlwaysPullImage: false,
+			Env: map[string]string{
+				"KAFKA_NODE_ID":                                  "1",
+				"CLUSTER_ID":                                     "IrzuggcFT-mWom7mj7PgtA",
+				"KAFKA_PROCESS_ROLES":                            "controller,broker",
+				"KAFKA_LISTENERS":                                "BROKER://:9092,CONTROLLER://:9093",
+				"KAFKA_CONTROLLER_LISTENER_NAMES":                "CONTROLLER",
+				"KAFKA_INTER_BROKER_LISTENER_NAME":               "BROKER",
+				"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":           "CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT",
+				"KAFKA_ADVERTISED_LISTENERS":                     "BROKER://" + kafkaUrl,
+				"KAFKA_CONTROLLER_QUORUM_VOTERS":                 "1@localhost:9093",
+				"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR":         "1",
+				"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
+				"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":            "1",
+				"KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS":         "0",
+				"KAFKA_NUM_PARTITIONS":                           "1",
+			},
+		},
+		Started: true,
+	})
 	if err != nil {
 		return kafkaUrl, err
 	}
@@ -21,11 +68,21 @@ func Kafka(ctx context.Context, wg *sync.WaitGroup) (kafkaUrl string, err error)
 		<-ctx.Done()
 		log.Println("DEBUG: remove container kafka", c.Terminate(context.Background()))
 	}()
-	brokers, err := c.Brokers(ctx)
+
+	containerPort, err := c.MappedPort(ctx, "9092/tcp")
 	if err != nil {
 		return kafkaUrl, err
 	}
-	return brokers[0], err
+	log.Println("KAFKA_TEST: container-port", containerPort, kafkaport)
+
+	err = Retry(1*time.Minute, func() error {
+		return tryKafkaConn(kafkaUrl)
+	})
+	if err != nil {
+		return kafkaUrl, err
+	}
+
+	return kafkaUrl, err
 }
 
 func tryKafkaConn(kafkaUrl string) error {
@@ -44,6 +101,15 @@ func tryKafkaConn(kafkaUrl string) error {
 	if len(brokers) == 0 {
 		err = errors.New("missing brokers")
 		log.Println(err)
+		return err
+	}
+	p, err := conn.ReadPartitions("__consumer_offsets")
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+	if len(p) == 0 {
+		err = errors.New("__consumer_offsets not ready")
 		return err
 	}
 	log.Println("kafka connection ok")
