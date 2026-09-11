@@ -57,6 +57,15 @@ func NewMultiConsumer(ctx context.Context, config Config, topics []string, liste
 			log.Fatal("ERROR:", err)
 		}
 	}
+	if config.MessageRetryTimeout == 0 {
+		config.MessageRetryTimeout = 10 * time.Minute
+	}
+	if config.RestartBackoffMin <= 0 {
+		config.RestartBackoffMin = time.Second
+	}
+	if config.RestartBackoffMax < config.RestartBackoffMin {
+		config.RestartBackoffMax = max(time.Minute, config.RestartBackoffMin)
+	}
 	if config.InitTopic {
 		for _, topic := range topics {
 			err = InitTopic(config.KafkaUrl, topic)
@@ -92,6 +101,26 @@ func newGroupConsumer(ctx context.Context, config Config, topics []string, liste
 
 	startTime := time.Now()
 
+	if config.Wg != nil {
+		config.Wg.Add(1)
+	}
+	go func() {
+		if config.Wg != nil {
+			defer config.Wg.Done()
+		}
+		defer slog.Info("close kafka-go consumer", "topic", topic)
+		runWithRestart(ctx, config, []any{"topic", topic, "topics", topics}, func(progress func()) error {
+			return consumeGroup(ctx, config, topic, topics, startTime, progress, listener)
+		})
+	}()
+	return nil
+}
+
+// consumeGroup reads until ctx is done (nil result) or until an error makes the
+// reader unusable. The error is returned instead of ending the consumer, so
+// runWithRestart can build a new reader; the reader resumes at the committed
+// offset, which means an unhandled message is repeated rather than skipped.
+func consumeGroup(ctx context.Context, config Config, topic string, topics []string, startTime time.Time, progress func(), listener func(delivery Message) error) error {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		StartOffset:            config.StartOffset,
 		CommitInterval:         0, //synchronous commits
@@ -105,58 +134,47 @@ func newGroupConsumer(ctx context.Context, config Config, topics []string, liste
 		WatchPartitionChanges:  true,
 		PartitionWatchInterval: config.PartitionWatchInterval,
 	})
-	if config.Wg != nil {
-		config.Wg.Add(1)
-	}
-	go func() {
-		if config.Wg != nil {
-			defer config.Wg.Done()
-		}
-		defer r.Close()
-		defer slog.Info("close kafka-go consumer", "topic", topic)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				m, err := r.FetchMessage(ctx)
-				slog.Debug("fetch kafka message", "topic", topic, "partition", m.Partition, "offset", m.Offset, "key", string(m.Key), "value", string(m.Value), "error", err)
-				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-					return
+	defer r.Close()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			m, err := r.FetchMessage(ctx)
+			slog.Debug("fetch kafka message", "topic", topic, "partition", m.Partition, "offset", m.Offset, "key", string(m.Key), "value", string(m.Value), "error", err)
+			if err != nil {
+				if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+					return nil
 				}
+				return fmt.Errorf("while consuming topic: %v %w", topic, err)
+			}
+			if !(config.StartOffset == LastOffset && m.Time.Before(startTime)) { //if LastOffset: skip messages, that are older than the start time
+				err = retry(func() error {
+					return listener(Message{
+						Topic:     m.Topic,
+						Partition: m.Partition,
+						Offset:    m.Offset,
+						Key:       m.Key,
+						Value:     m.Value,
+						Time:      m.Time,
+					})
+				}, func(n int64) time.Duration {
+					return time.Duration(n) * time.Second
+				}, config.MessageRetryTimeout)
 				if err != nil {
-					config.OnError(fmt.Errorf("while consuming topic: %v %w", topic, err))
-					return
-				}
-				if !(config.StartOffset == LastOffset && m.Time.Before(startTime)) { //if LastOffset: skip messages, that are older than the start time
-					err = retry(func() error {
-						return listener(Message{
-							Topic:     m.Topic,
-							Partition: m.Partition,
-							Offset:    m.Offset,
-							Key:       m.Key,
-							Value:     m.Value,
-							Time:      m.Time,
-						})
-					}, func(n int64) time.Duration {
-						return time.Duration(n) * time.Second
-					}, 10*time.Minute)
-				}
-
-				if err != nil {
-					config.OnError(fmt.Errorf("unable to handle message (no commit): %w", err))
-					return
-				} else {
-					err = r.CommitMessages(ctx, m)
-					if err != nil {
-						config.OnError(fmt.Errorf("while committing consumption: %v %w", topic, err))
-						return
-					}
+					return fmt.Errorf("unable to handle message (no commit): %w", err)
 				}
 			}
+			err = r.CommitMessages(ctx, m)
+			if err != nil {
+				if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("while committing consumption: %v %w", topic, err)
+			}
+			progress()
 		}
-	}()
-	return nil
+	}
 }
 
 // used when no consumer-group is configured: every partition of every topic is
@@ -243,6 +261,16 @@ func newPartitionConsumer(ctx context.Context, config Config, topics []string, l
 
 func consumePartition(ctx context.Context, config Config, topic string, partition int, startOffset int64, wg *sync.WaitGroup, listener func(delivery Message) error) {
 	defer wg.Done()
+	//no offset is committed without a consumer-group, so the position has to
+	//survive a restart in this process: a new reader would otherwise fall back
+	//to startOffset and read the whole partition again
+	offset := startOffset
+	runWithRestart(ctx, config, []any{"topic", topic, "partition", partition}, func(progress func()) error {
+		return consumePartitionFrom(ctx, config, topic, partition, &offset, progress, listener)
+	})
+}
+
+func consumePartitionFrom(ctx context.Context, config Config, topic string, partition int, offset *int64, progress func(), listener func(delivery Message) error) error {
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{config.KafkaUrl},
 		Topic:       topic,
@@ -254,25 +282,23 @@ func consumePartition(ctx context.Context, config Config, topic string, partitio
 	defer func() {
 		slog.Info("close kafka partition consumer", "topic", topic, "partition", partition, "result", r.Close())
 	}()
-	err := r.SetOffset(startOffset)
+	err := r.SetOffset(*offset)
 	if err != nil {
-		config.OnError(fmt.Errorf("unable to set start offset of topic %v partition %v: %w", topic, partition, err))
-		return
+		return fmt.Errorf("unable to set start offset of topic %v partition %v: %w", topic, partition, err)
 	}
-	slog.Info("start kafka partition consumer", "topic", topic, "partition", partition)
+	slog.Info("start kafka partition consumer", "topic", topic, "partition", partition, "offset", *offset)
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		default:
 			m, err := r.FetchMessage(ctx)
 			slog.Debug("fetch kafka message", "topic", topic, "partition", partition, "offset", m.Offset, "key", string(m.Key), "value", string(m.Value), "error", err)
-			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				return
-			}
 			if err != nil {
-				config.OnError(fmt.Errorf("while consuming topic: %v %w", topic, err))
-				return
+				if ctx.Err() != nil || errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("while consuming topic: %v %w", topic, err)
 			}
 			err = retry(func() error {
 				return listener(Message{
@@ -285,11 +311,13 @@ func consumePartition(ctx context.Context, config Config, topic string, partitio
 				})
 			}, func(n int64) time.Duration {
 				return time.Duration(n) * time.Second
-			}, 10*time.Minute)
+			}, config.MessageRetryTimeout)
 			if err != nil {
-				config.OnError(fmt.Errorf("unable to handle message: %w", err))
-				return
+				//the offset is left on the failed message, so the restart repeats it
+				return fmt.Errorf("unable to handle message: %w", err)
 			}
+			*offset = m.Offset + 1
+			progress()
 		}
 	}
 }
@@ -322,6 +350,57 @@ func getPartitions(bootstrapUrl string, topic string) (result []int, err error) 
 		result = append(result, partition.ID)
 	}
 	return result, nil
+}
+
+// runWithRestart keeps a consumer running until ctx is done. An error ends the
+// current run and a new one is started after a growing wait, instead of ending
+// the goroutine and leaving a process that stays healthy and ready while it
+// consumes nothing. config.OnError is only called once the consumer has been
+// failing for longer than RestartBackoffMax: a disruption short enough to be
+// bridged stays a warning, a lasting one is as loud as it was before, including
+// the log.Fatal of the default OnError.
+func runWithRestart(ctx context.Context, config Config, logArgs []any, f func(progress func()) error) {
+	backoffMin := config.RestartBackoffMin
+	if backoffMin <= 0 {
+		backoffMin = time.Second
+	}
+	backoffMax := config.RestartBackoffMax
+	if backoffMax < backoffMin {
+		backoffMax = max(time.Minute, backoffMin)
+	}
+
+	wait := backoffMin
+	disruptionStart := time.Time{} //zero while the consumer makes progress
+	for {
+		//progress is called by f after every handled message; f runs in this
+		//goroutine, so the closure needs no synchronisation
+		err := f(func() {
+			disruptionStart = time.Time{}
+			wait = backoffMin
+		})
+		if ctx.Err() != nil {
+			return
+		}
+		if err == nil {
+			return
+		}
+		if disruptionStart.IsZero() {
+			disruptionStart = time.Now()
+		}
+		slog.Warn("restart kafka consumer after error", append(append([]any{}, logArgs...),
+			"error", err,
+			"wait", wait.String(),
+			"disrupted-for", time.Since(disruptionStart).String())...)
+		if time.Since(disruptionStart) > backoffMax {
+			config.OnError(fmt.Errorf("kafka consumer failing for longer than %v: %w", backoffMax, err))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = min(2*wait, backoffMax)
+	}
 }
 
 func retry(f func() error, waitProvider func(n int64) time.Duration, timeout time.Duration) (err error) {

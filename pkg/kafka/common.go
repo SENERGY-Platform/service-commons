@@ -33,8 +33,12 @@ type Config struct {
 	TimeNow                func() time.Time //defaults to time.Now
 	Wg                     *sync.WaitGroup  //optional
 	PartitionWatchInterval time.Duration    //defaults to time.Minute
-	OnError                func(error)      //defaults to log.Fatal
+	OnError                func(error)      //defaults to log.Fatal; called when a consumer stays in error for longer than RestartBackoffMax
 	InitTopic              bool
+
+	MessageRetryTimeout time.Duration //defaults to 10*time.Minute; how long a failing listener is retried before the consumer is restarted
+	RestartBackoffMin   time.Duration //defaults to time.Second; wait before the first restart of a failed consumer
+	RestartBackoffMax   time.Duration //defaults to time.Minute; upper bound of the restart wait, and the point at which a disruption counts as lasting
 }
 
 const LastOffset = kafka.LastOffset
