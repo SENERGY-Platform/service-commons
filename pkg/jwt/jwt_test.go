@@ -18,6 +18,7 @@ package jwt
 
 import (
 	"context"
+	"encoding/base64"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache"
 	"github.com/SENERGY-Platform/service-commons/pkg/cache/memcached"
 	"github.com/SENERGY-Platform/service-commons/pkg/testing/docker"
@@ -25,6 +26,68 @@ import (
 	"testing"
 	"time"
 )
+
+// unsignedToken builds a parseable but unsigned JWT from a claims body, since
+// Parse() never checks the signature (see ParseUnverified).
+func unsignedToken(claimsJSON string) string {
+	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+	payload := base64.RawURLEncoding.EncodeToString([]byte(claimsJSON))
+	return header + "." + payload + "."
+}
+
+func TestParseAudience(t *testing.T) {
+	tests := []struct {
+		name     string
+		claims   string
+		expected []string
+	}{
+		{
+			name:     "decodes a single-string aud into one element",
+			claims:   `{"sub":"u1","aud":"frontend"}`,
+			expected: []string{"frontend"},
+		},
+		{
+			name:     "decodes an array aud into multiple elements",
+			claims:   `{"sub":"u1","aud":["frontend","backend"]}`,
+			expected: []string{"frontend", "backend"},
+		},
+		{
+			name:     "leaves aud empty when the claim is absent",
+			claims:   `{"sub":"u1"}`,
+			expected: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			token, err := Parse(unsignedToken(test.claims))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(token.Aud) != len(test.expected) {
+				t.Fatalf("expected aud %v, got %v", test.expected, token.Aud)
+			}
+			for i, aud := range test.expected {
+				if token.Aud[i] != aud {
+					t.Fatalf("expected aud %v, got %v", test.expected, token.Aud)
+				}
+			}
+		})
+	}
+}
+
+func TestTokenHasAudience(t *testing.T) {
+	token, err := Parse(unsignedToken(`{"sub":"u1","aud":["frontend","reporting-service"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !token.HasAudience("reporting-service") {
+		t.Error("expected token to have audience reporting-service")
+	}
+	if token.HasAudience("device-repository") {
+		t.Error("expected token not to have audience device-repository")
+	}
+}
 
 func TestWithCache(t *testing.T) {
 	const testToken = "Bearer eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICIzaUtabW9aUHpsMmRtQnBJdS1vSkY4ZVVUZHh4OUFIckVOcG5CcHM5SjYwIn0.eyJqdGkiOiIzMmE1OTljZC0zNDgxLTQzYWUtYWY0NC04YTVmNjU4NzYxZTUiLCJleHAiOjE1NjI5MjAwMDUsIm5iZiI6MCwiaWF0IjoxNTYyOTE2NDA1LCJpc3MiOiJodHRwczovL2F1dGguc2VwbC5pbmZhaS5vcmcvYXV0aC9yZWFsbXMvbWFzdGVyIiwiYXVkIjoiZnJvbnRlbmQiLCJzdWIiOiJlYmJhZDkyNy00YzM5LTRkMTItODY5MC04OWIwNjdkZDRjZTciLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJmcm9udGVuZCIsIm5vbmNlIjoiNTVlMzA4N2UtZjljNi00MmQ2LWE0MmEtMGZiMjcxNWE4OTkyIiwiYXV0aF90aW1lIjoxNTYyOTE2NDA0LCJzZXNzaW9uX3N0YXRlIjoiYmU5MDQ2MmYtOGE3Yy00NWU4LTg1MjAtMGRlYzViZWI1ZWZlIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIqIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJ1bWFfYXV0aG9yaXphdGlvbiIsInVzZXIiXX0sInJlc291cmNlX2FjY2VzcyI6eyJhY2NvdW50Ijp7InJvbGVzIjpbIm1hbmFnZS1hY2NvdW50IiwibWFuYWdlLWFjY291bnQtbGlua3MiLCJ2aWV3LXByb2ZpbGUiXX19LCJyb2xlcyI6WyJ1bWFfYXV0aG9yaXphdGlvbiIsInVzZXIiLCJvZmZsaW5lX2FjY2VzcyJdLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJpbmdvIn0.pggKYb3V0VxFINWBqpFE_t14MKhSM7bhw8YqrYBRvOzh8ft7zu_-bOvLOYbJBwo0GU1D68U2d_eerkYEIt-mc0dNtdFasy5DG_GtvnWA4nsbf0BVsYKSZcRiDK4d4qbHu9NMjBdEwSkP9KDGEtou0yHtOnVzB1eHHNm_uSUO-O_kz2LWsXOPK2sbL1LTiCKS0XToJPdlaNczDMZB0nXR3sHbyi3Lwk-Va2ATS6Kke5M1KmFMowK-Y0jK2urt8GnCBIXvZMT6gUW9-dvlv4w_lAuVXQ9hFg_r0sBnoWzZOUR_xlrz2T-syjrZzmXlAkJrcD8KWPH-lCs0jD9pdiROhQ"

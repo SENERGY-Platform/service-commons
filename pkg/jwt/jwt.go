@@ -17,6 +17,7 @@
 package jwt
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/golang-jwt/jwt"
@@ -93,6 +94,27 @@ type Token struct {
 	Username      string              `json:"preferred_username,omitempty"`
 	Email         string              `json:"email"`
 	EmailVerified bool                `json:"email_verified"`
+	Aud           Audience            `json:"aud,omitempty"`
+}
+
+// Audience decodes the JWT "aud" claim (RFC 7519 §4.1.3), which Keycloak sends
+// as a bare string for a single audience and as an array for more than one.
+type Audience []string
+
+func (this *Audience) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		if single != "" {
+			*this = Audience{single}
+		}
+		return nil
+	}
+	var multi []string
+	if err := json.Unmarshal(data, &multi); err != nil {
+		return err
+	}
+	*this = multi
+	return nil
 }
 
 func (this *Token) String() string {
@@ -132,4 +154,12 @@ func (this *Token) HasRole(role string) bool {
 
 func (this *Token) HasGroup(group string) bool {
 	return slices.Contains(this.GetGroups(), group)
+}
+
+func (this *Token) GetAudience() []string {
+	return this.Aud
+}
+
+func (this *Token) HasAudience(clientId string) bool {
+	return slices.Contains(this.Aud, clientId)
 }
