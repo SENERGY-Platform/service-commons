@@ -57,6 +57,7 @@ type OpenidToken struct {
 	ExpiresIn        float64   `json:"expires_in"`
 	RefreshExpiresIn float64   `json:"refresh_expires_in"`
 	RefreshToken     string    `json:"refresh_token"`
+	IssuedTokenType  string    `json:"issued_token_type"`
 	TokenType        string    `json:"token_type"`
 	RequestTime      time.Time `json:"-"`
 	ParsedToken      Token     `json:"-"`
