@@ -23,23 +23,32 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
 // KeycloakRealm is the realm ExchangeUserTokenV2 targets. Override it if the target realm is not "master".
 var KeycloakRealm = "master"
 
-// ExchangeUserTokenV2 implements Keycloak's "Standard token exchange" (RFC 8693), exchanging subjectToken
-// for a new token scoped to audience. See https://www.keycloak.org/securing-apps/token-exchange#_standard-token-exchange
-func ExchangeUserTokenV2(keycloakEndpoint, clientId, clientSecret, subjectToken, audience string) (token Token, expiration time.Duration, err error) {
-	resp, err := http.PostForm(keycloakEndpoint+"/auth/realms/"+KeycloakRealm+"/protocol/openid-connect/token", url.Values{
-		"client_id":          {clientId},
-		"client_secret":      {clientSecret},
+// ExchangeUserTokenV2 implements Keycloak's "Standard token exchange", exchanging subjectToken
+// for a new token. Parameters requestedTokenType, scope and audience are optional.
+// See https://www.keycloak.org/securing-apps/token-exchange#_standard-token-exchange
+func ExchangeUserTokenV2(keycloakEndpoint, subjectToken, requestedTokenType string, scope, audience []string) (token Token, expiration time.Duration, err error) {
+	values := url.Values{
 		"grant_type":         {"urn:ietf:params:oauth:grant-type:token-exchange"},
 		"subject_token":      {subjectToken},
 		"subject_token_type": {"urn:ietf:params:oauth:token-type:access_token"},
-		"audience":           {audience},
-	})
+	}
+	if requestedTokenType != "" {
+		values.Set("requested_token_type", requestedTokenType)
+	}
+	if len(scope) > 0 {
+		values.Set("scope", strings.Join(scope, " "))
+	}
+	for _, val := range audience {
+		values.Add("audience", val)
+	}
+	resp, err := http.PostForm(keycloakEndpoint+"/auth/realms/"+KeycloakRealm+"/protocol/openid-connect/token", values)
 	if err != nil {
 		return
 	}
