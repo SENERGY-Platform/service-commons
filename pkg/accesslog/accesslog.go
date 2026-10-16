@@ -38,6 +38,22 @@ import (
 
 var PreliminaryLogTimeout = 10 * time.Second
 
+// sensitiveHeaders are request headers that may carry credentials; they are left out of the log (lower case).
+// Sec-WebSocket-Protocol is included because browsers pass bearer tokens through it for websockets.
+var sensitiveHeaders = map[string]struct{}{
+	"authorization":          {},
+	"proxy-authorization":    {},
+	"cookie":                 {},
+	"x-api-key":              {},
+	"x-auth-token":           {},
+	"sec-websocket-protocol": {},
+}
+
+func isSensitiveHeader(key string) bool {
+	_, ok := sensitiveHeaders[strings.ToLower(key)]
+	return ok
+}
+
 //func New(handler http.Handler) http.Handler {
 //	return NewWithLogger(handler, slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 //		Level: slog.LevelInfo,
@@ -132,7 +148,7 @@ func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *ht
 
 	headers := map[string]string{}
 	for key, _ := range request.Header {
-		if key != "Authorization" {
+		if !isSensitiveHeader(key) {
 			headers[key] = request.Header.Get(key)
 		}
 	}

@@ -17,13 +17,16 @@
 package accesslog
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -219,4 +222,70 @@ func Test(t *testing.T) {
 		t.Error(c)
 		return
 	}
+}
+
+func TestSensitiveHeadersAreNotLogged(t *testing.T) {
+	buf := &syncBuffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	blocked := map[string]string{
+		"Authorization":          "Bearer secret-authorization-value",
+		"Proxy-Authorization":    "Basic secret-proxy-authorization-value",
+		"Cookie":                 "session=secret-cookie-value",
+		"X-Api-Key":              "secret-api-key-value",
+		"X-Auth-Token":           "secret-auth-token-value",
+		"Sec-WebSocket-Protocol": "secret-websocket-protocol-value",
+	}
+
+	server := httptest.NewServer(NewWithLogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), logger))
+	defer server.Close()
+
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/foo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range blocked {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("X-Custom-Header", "normal-header-value")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	// the access log line is written after the handler returned, so it may arrive after the response
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(buf.String(), "response-status-code") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "normal-header-value") {
+		t.Errorf("normal header missing from log: %s", out)
+	}
+	for key, value := range blocked {
+		if strings.Contains(out, value) {
+			t.Errorf("value of header %s found in log", key)
+		}
+	}
+}
+
+type syncBuffer struct {
+	mux sync.Mutex
+	buf bytes.Buffer
+}
+
+func (this *syncBuffer) Write(p []byte) (int, error) {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	return this.buf.Write(p)
+}
+
+func (this *syncBuffer) String() string {
+	this.mux.Lock()
+	defer this.mux.Unlock()
+	return this.buf.String()
 }
