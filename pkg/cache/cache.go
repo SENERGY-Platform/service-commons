@@ -199,7 +199,9 @@ func Get[RESULT any](cache *Cache, key string, validate func(RESULT) error) (ite
 	}()
 	start := time.Now()
 	if cache.readCacheHook != nil {
-		defer cache.readCacheHook(time.Since(start))
+		defer func() {
+			cache.readCacheHook(time.Since(start))
+		}()
 	}
 	if cache.cacheMissHook != nil {
 		defer func() {

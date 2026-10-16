@@ -333,6 +333,7 @@ func TestKafkaLastOffset(t *testing.T) {
 	mux := sync.Mutex{}
 
 	subCtx, subCancel := context.WithCancel(ctx)
+	defer subCancel()
 	err = NewConsumer(subCtx, Config{
 		KafkaUrl:    kafkaUrl,
 		StartOffset: LastOffset,

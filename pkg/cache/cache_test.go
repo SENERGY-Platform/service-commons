@@ -599,3 +599,53 @@ func checkGet[RESULT any](t *testing.T, cache *Cache, key string, expectedItem R
 	}
 	return result
 }
+
+type slowGetCache struct {
+	interfaces.CacheImpl
+	delay time.Duration
+}
+
+func (this slowGetCache) Get(key string) (value interface{}, resultType interfaces.ResultType, err error) {
+	time.Sleep(this.delay)
+	return this.CacheImpl.Get(key)
+}
+
+func TestReadCacheHookMeasuresRead(t *testing.T) {
+	const delay = 50 * time.Millisecond
+	l1, err := localcache.New(time.Hour, time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	reads := []time.Duration{}
+	cache, err := New(Config{
+		L1: slowGetCache{CacheImpl: l1, delay: delay},
+		ReadCacheHook: func(duration time.Duration) {
+			reads = append(reads, duration)
+		},
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	err = cache.Set("a", "a1", time.Minute)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if !checkGet(t, cache, "a", "a1", nil) {
+		return
+	}
+	if !checkGet(t, cache, "missing", "", ErrNotFound) {
+		return
+	}
+	if len(reads) != 2 {
+		t.Error(reads)
+		return
+	}
+	for _, d := range reads {
+		if d < delay {
+			t.Error("read duration does not cover the cache read", d, reads)
+		}
+	}
+}
