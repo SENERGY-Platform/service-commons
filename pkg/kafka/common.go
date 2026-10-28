@@ -36,6 +36,12 @@ type Config struct {
 	OnError                func(error)      //defaults to log.Fatal; called when a consumer stays in error for longer than RestartBackoffMax
 	InitTopic              bool
 
+	//optional, with ConsumerGroup and LastOffset: skip every message older than the start of the consumer, also when a
+	//partition has a committed offset, so that a consumer started again leaves out what was produced while it was
+	//stopped. By default a consumer continues at the committed offset, and LastOffset only decides where a partition
+	//without a committed offset begins.
+	SkipMessagesBeforeStart bool
+
 	MessageRetryTimeout time.Duration //defaults to 10*time.Minute; how long a failing listener is retried before the consumer is restarted
 	RestartBackoffMin   time.Duration //defaults to time.Second; wait before the first restart of a failed consumer
 	RestartBackoffMax   time.Duration //defaults to time.Minute; upper bound of the restart wait, and the point at which a disruption counts as lasting

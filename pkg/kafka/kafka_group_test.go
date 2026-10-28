@@ -302,7 +302,9 @@ func TestKafkaGroupSubBalancer(t *testing.T) {
 	time.Sleep(1 * time.Second)
 }
 
-func TestKafkaGroupLastOffset(t *testing.T) {
+// with SkipMessagesBeforeStart, a consumer started again leaves out 5 and 6, produced while it was
+// stopped, as older than its new start
+func TestKafkaGroupLastOffsetSkipMessagesBeforeStart(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	defer wg.Wait()
 
@@ -345,11 +347,12 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
 	err = NewConsumer(subCtx, Config{
-		KafkaUrl:      kafkaUrl,
-		ConsumerGroup: "test",
-		StartOffset:   LastOffset,
-		Wg:            wg,
-		InitTopic:     true,
+		KafkaUrl:                kafkaUrl,
+		ConsumerGroup:           "test",
+		StartOffset:             LastOffset,
+		SkipMessagesBeforeStart: true,
+		Wg:                      wg,
+		InitTopic:               true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
@@ -390,11 +393,12 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	err = NewConsumer(ctx, Config{
-		KafkaUrl:      kafkaUrl,
-		ConsumerGroup: "test",
-		StartOffset:   LastOffset,
-		Wg:            wg,
-		InitTopic:     true,
+		KafkaUrl:                kafkaUrl,
+		ConsumerGroup:           "test",
+		StartOffset:             LastOffset,
+		SkipMessagesBeforeStart: true,
+		Wg:                      wg,
+		InitTopic:               true,
 	}, "test", func(delivery []byte) error {
 		mux.Lock()
 		defer mux.Unlock()
@@ -427,4 +431,103 @@ func TestKafkaGroupLastOffset(t *testing.T) {
 		t.Error(received)
 	}
 
+}
+
+// a consumer that is stopped and started again, e.g. because the set of topics it reads changed,
+// continues at the committed offset by default: 5 and 6, produced while it was stopped, are
+// delivered instead of being skipped as older than the new start; 1 and 2, produced before the
+// group ever committed, are still left out by LastOffset
+func TestKafkaGroupLastOffsetContinuesAtCommit(t *testing.T) {
+	wg := &sync.WaitGroup{}
+	defer wg.Wait()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	kafkaUrl, err := docker.Kafka(ctx, wg)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	producer, err := NewProducer(ctx, Config{
+		KafkaUrl:  kafkaUrl,
+		Wg:        wg,
+		InitTopic: true,
+	}, "test")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(1 * time.Second)
+
+	produce := func(values ...string) bool {
+		for _, v := range values {
+			if err := producer.Produce("test", []byte(v)); err != nil {
+				t.Error(err)
+				return false
+			}
+		}
+		return true
+	}
+	if !produce("1", "2") {
+		return
+	}
+	time.Sleep(1 * time.Second)
+
+	received := []string{}
+	mux := sync.Mutex{}
+	consume := func(ctx context.Context) error {
+		return NewConsumer(ctx, Config{
+			KafkaUrl:      kafkaUrl,
+			ConsumerGroup: "test",
+			StartOffset:   LastOffset,
+			Wg:            wg,
+			InitTopic:     true,
+		}, "test", func(delivery []byte) error {
+			mux.Lock()
+			defer mux.Unlock()
+			received = append(received, string(delivery))
+			return nil
+		})
+	}
+
+	subCtx, subCancel := context.WithCancel(ctx)
+	defer subCancel()
+	if err = consume(subCtx); err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(10 * time.Second)
+	if !produce("3", "4") {
+		return
+	}
+	time.Sleep(10 * time.Second)
+	subCancel()
+
+	time.Sleep(10 * time.Second)
+	if !produce("5", "6") {
+		return
+	}
+	time.Sleep(10 * time.Second)
+
+	if err = consume(ctx); err != nil {
+		t.Error(err)
+		return
+	}
+
+	time.Sleep(10 * time.Second)
+	if !produce("7", "8") {
+		return
+	}
+	time.Sleep(10 * time.Second)
+
+	mux.Lock()
+	defer mux.Unlock()
+
+	if !reflect.DeepEqual(received, []string{"3", "4", "5", "6", "7", "8"}) {
+		t.Error(received)
+	}
 }

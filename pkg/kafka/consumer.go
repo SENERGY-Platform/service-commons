@@ -148,7 +148,7 @@ func consumeGroup(ctx context.Context, config Config, topic string, topics []str
 				}
 				return fmt.Errorf("while consuming topic: %v %w", topic, err)
 			}
-			if !(config.StartOffset == LastOffset && m.Time.Before(startTime)) { //if LastOffset: skip messages, that are older than the start time
+			if !(config.StartOffset == LastOffset && config.SkipMessagesBeforeStart && m.Time.Before(startTime)) { //if LastOffset and SkipMessagesBeforeStart: skip messages, that are older than the start time
 				err = retry(func() error {
 					return listener(Message{
 						Topic:     m.Topic,
