@@ -18,6 +18,7 @@ package accesslog
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +38,14 @@ import (
 )
 
 var PreliminaryLogTimeout = 10 * time.Second
+
+const (
+	// callSourceLookupTimeout bounds the reverse lookup of the caller, which runs before the handler.
+	// Without it a DNS server that does not answer PTR queries delays every request by the resolver's own timeout.
+	callSourceLookupTimeout = 2 * time.Second
+	callSourceNameTTL       = time.Hour       // IPs get reassigned, so a host name is looked up again after this
+	callSourceFailureTTL    = 5 * time.Minute // failed lookups are cached too, so the timeout is not paid on every request
+)
 
 // sensitiveHeaders are request headers that may carry credentials; they are left out of the log (lower case).
 // Sec-WebSocket-Protocol is included because browsers pass bearer tokens through it for websockets.
@@ -99,10 +108,11 @@ func NewWithLogger(handler http.Handler, logger *slog.Logger) http.Handler {
 		project = info.Main.Path
 	}
 	return &AccessLogMiddleware{
-		handler:            handler,
-		getCallSourceCache: map[string]string{},
-		logger:             logger.With("organization", organization, "project", project, "log_record_type", "http-access"),
-		errorlogger:        logger.With("organization", organization, "project", project, "log_record_type", "http-access-panic")}
+		handler:     handler,
+		resolver:    net.DefaultResolver,
+		callSources: map[string]*callSource{},
+		logger:      logger.With("organization", organization, "project", project, "log_record_type", "http-access"),
+		errorlogger: logger.With("organization", organization, "project", project, "log_record_type", "http-access-panic")}
 }
 
 type Options struct {
@@ -111,11 +121,28 @@ type Options struct {
 }
 
 type AccessLogMiddleware struct {
-	handler               http.Handler
-	getCallSourceCache    map[string]string
-	getCallSourceCacheMux sync.Mutex
-	logger                *slog.Logger
-	errorlogger           *slog.Logger
+	handler        http.Handler
+	resolver       *net.Resolver
+	callSources    map[string]*callSource // by remote IP; the port changes with every connection
+	callSourcesMux sync.Mutex
+	logger         *slog.Logger
+	errorlogger    *slog.Logger
+}
+
+// callSource is the logged caller for one remote IP. name and expires are written once, before done is closed.
+type callSource struct {
+	name    string // host name, or the IP if the reverse lookup failed
+	expires time.Time
+	done    chan struct{}
+}
+
+func (this *callSource) resolved() bool {
+	select {
+	case <-this.done:
+		return true
+	default:
+		return false
+	}
 }
 
 func (this *AccessLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -177,29 +204,40 @@ func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *ht
 	}
 }
 
-func (this *AccessLogMiddleware) getCallSource(req *http.Request) (result string) {
-	this.getCallSourceCacheMux.Lock()
-	var cacheHit bool
-	result, cacheHit = this.getCallSourceCache[req.RemoteAddr]
-	this.getCallSourceCacheMux.Unlock()
-	if cacheHit {
-		return result
+// getCallSource returns the host name of the caller, or its IP if the reverse lookup fails.
+// Concurrent requests from the same IP wait for one shared lookup.
+func (this *AccessLogMiddleware) getCallSource(req *http.Request) string {
+	ip, _, err := net.SplitHostPort(req.RemoteAddr)
+	if err != nil || ip == "" {
+		return req.RemoteAddr
 	}
 
-	result = req.RemoteAddr
-	remoteAddr, _, err := net.SplitHostPort(result)
-	if err == nil && remoteAddr != "" {
-		remoteHosts, _ := net.LookupAddr(remoteAddr)
-		if len(remoteHosts) > 0 {
-			sort.Strings(remoteHosts)
-			result = remoteHosts[0]
-			this.getCallSourceCacheMux.Lock()
-			this.getCallSourceCache[req.RemoteAddr] = result
-			this.getCallSourceCacheMux.Unlock()
-		}
+	this.callSourcesMux.Lock()
+	source, ok := this.callSources[ip]
+	if ok && (!source.resolved() || time.Now().Before(source.expires)) {
+		this.callSourcesMux.Unlock()
+		<-source.done
+		return source.name
 	}
+	source = &callSource{done: make(chan struct{})}
+	this.callSources[ip] = source
+	this.callSourcesMux.Unlock()
 
-	return result
+	source.name, source.expires = this.lookupCallSource(ip)
+	close(source.done)
+	return source.name
+}
+
+func (this *AccessLogMiddleware) lookupCallSource(ip string) (name string, expires time.Time) {
+	// not bound to the request context: a client that disconnects early would otherwise cache a failure
+	ctx, cancel := context.WithTimeout(context.Background(), callSourceLookupTimeout)
+	defer cancel()
+	names, _ := this.resolver.LookupAddr(ctx, ip)
+	if len(names) == 0 {
+		return ip, time.Now().Add(callSourceFailureTTL)
+	}
+	sort.Strings(names)
+	return names[0], time.Now().Add(callSourceNameTTL)
 }
 
 var metaRegex = regexp.MustCompile(`(^[^/]+/[^/]+)/(.+$)`)

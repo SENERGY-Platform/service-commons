@@ -18,13 +18,16 @@ package accesslog
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"github.com/SENERGY-Platform/service-commons/pkg/jwt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -270,6 +273,154 @@ func TestSensitiveHeadersAreNotLogged(t *testing.T) {
 		if strings.Contains(out, value) {
 			t.Errorf("value of header %s found in log", key)
 		}
+	}
+}
+
+// TestUnansweredReverseLookup uses a DNS server that never answers, like the embedded Docker DNS for PTR queries
+// of container IPs. With the resolver defaults (5 s, 2 attempts) a request used to wait 10 s.
+func TestUnansweredReverseLookup(t *testing.T) {
+	dns, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dns.Close()
+	queries := atomic.Int64{}
+	go func() {
+		packet := make([]byte, 512)
+		for {
+			if _, _, err := dns.ReadFrom(packet); err != nil {
+				return
+			}
+			queries.Add(1)
+		}
+	}()
+
+	buf := &syncBuffer{}
+	handler := NewWithLogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	middleware := handler.(*AccessLogMiddleware)
+	middleware.resolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "udp", dns.LocalAddr().String())
+		},
+	}
+
+	// documentation addresses (RFC 5737), not in /etc/hosts, so the lookup has to ask the DNS server
+	serve := func(remoteAddr string) time.Duration {
+		req := httptest.NewRequest(http.MethodGet, "/foo", nil)
+		req.RemoteAddr = remoteAddr
+		start := time.Now()
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		return time.Since(start)
+	}
+
+	if d := serve("192.0.2.1:40001"); d > 3*time.Second {
+		t.Fatalf("request with unanswered reverse lookup took %v", d)
+	}
+	if !strings.Contains(buf.String(), `"caller":"192.0.2.1"`) {
+		t.Fatalf("caller is not the IP: %s", buf.String())
+	}
+	queriesPerLookup := queries.Load()
+	if queriesPerLookup == 0 {
+		t.Fatal("reverse lookup did not reach the test DNS server")
+	}
+
+	middleware.callSourcesMux.Lock()
+	ttl := time.Until(middleware.callSources["192.0.2.1"].expires)
+	middleware.callSourcesMux.Unlock()
+	if ttl <= callSourceFailureTTL-time.Minute || ttl > callSourceFailureTTL {
+		t.Fatalf("failed lookup cached for %v, want %v", ttl, callSourceFailureTTL)
+	}
+
+	// a new connection from the same IP comes from a new port and must hit the cache
+	if d := serve("192.0.2.1:40002"); d > 500*time.Millisecond {
+		t.Errorf("cached request took %v", d)
+	}
+	if q := queries.Load(); q != queriesPerLookup {
+		t.Errorf("cached request sent %d DNS queries", q-queriesPerLookup)
+	}
+
+	// concurrent requests from a new IP share one lookup
+	wg := sync.WaitGroup{}
+	for port := 40001; port <= 40010; port++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			serve(net.JoinHostPort("192.0.2.2", strconv.Itoa(port)))
+		}()
+	}
+	wg.Wait()
+	if q := queries.Load() - queriesPerLookup; q != queriesPerLookup {
+		t.Errorf("10 concurrent requests sent %d DNS queries, one lookup sends %d", q, queriesPerLookup)
+	}
+
+	// an expired entry is looked up again
+	middleware.callSourcesMux.Lock()
+	middleware.callSources["192.0.2.1"].expires = time.Now().Add(-time.Second)
+	middleware.callSourcesMux.Unlock()
+	before := queries.Load()
+	serve("192.0.2.1:40003")
+	if queries.Load() == before {
+		t.Error("expired entry was not looked up again")
+	}
+}
+
+// TestAnsweredReverseLookup resolves 8.8.8.8 through the public resolver 1.1.1.1, which answers PTR queries.
+func TestAnsweredReverseLookup(t *testing.T) {
+	dials := atomic.Int64{}
+	resolver := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			dials.Add(1)
+			var d net.Dialer
+			return d.DialContext(ctx, network, "1.1.1.1:53")
+		},
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := resolver.LookupAddr(probeCtx, "8.8.8.8"); err != nil {
+		t.Skipf("public resolver 1.1.1.1 not reachable: %v", err)
+	}
+
+	buf := &syncBuffer{}
+	handler := NewWithLogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	middleware := handler.(*AccessLogMiddleware)
+	middleware.resolver = resolver
+
+	serve := func(remoteAddr string) {
+		req := httptest.NewRequest(http.MethodGet, "/foo", nil)
+		req.RemoteAddr = remoteAddr
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	dialsBefore := dials.Load()
+	serve("8.8.8.8:40001")
+	if !strings.Contains(buf.String(), `"caller":"dns.google."`) {
+		t.Fatalf("caller is not the host name: %s", buf.String())
+	}
+
+	middleware.callSourcesMux.Lock()
+	ttl := time.Until(middleware.callSources["8.8.8.8"].expires)
+	middleware.callSourcesMux.Unlock()
+	if ttl <= callSourceNameTTL-time.Minute || ttl > callSourceNameTTL {
+		t.Fatalf("host name cached for %v, want %v", ttl, callSourceNameTTL)
+	}
+
+	dialsAfterLookup := dials.Load()
+	if dialsAfterLookup == dialsBefore {
+		t.Fatal("reverse lookup did not use the test resolver")
+	}
+	serve("8.8.8.8:40002")
+	if dials.Load() != dialsAfterLookup {
+		t.Error("cached host name was looked up again")
+	}
+	if n := strings.Count(buf.String(), `"caller":"dns.google."`); n != 2 {
+		t.Errorf("host name logged %d times, want 2", n)
 	}
 }
 
