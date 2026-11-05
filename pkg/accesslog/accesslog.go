@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	struct_logger "github.com/SENERGY-Platform/go-service-base/struct-logger"
@@ -185,16 +186,16 @@ func (this *AccessLogMiddleware) log(request *http.Request) (modifiedRequest *ht
 		this.logger.Error("unable to read request body", "error", err)
 	}
 	modifiedRequest.Body = io.NopCloser(bytes.NewBuffer(body))
-	finished := false
+	finished := atomic.Bool{} // read by the preliminary log timer, written by finish
 	args := []any{"method", method, "path", path, "caller", caller, "user", user, "headers", headers, "body", string(body)}
 	time.AfterFunc(PreliminaryLogTimeout, func() {
-		if !finished {
+		if !finished.Load() {
 			finalArgs := append(args, "preliminary", true)
 			this.logger.Info("", finalArgs...)
 		}
 	})
 	return modifiedRequest, func(response *Response) {
-		finished = true
+		finished.Store(true)
 		if r := recover(); r != nil {
 			this.errorlogger.Error("recovered from panic", "error", fmt.Sprint(r), "stacktrace", string(debug.Stack()))
 			http.Error(response, "Internal Server Error (recovered from panic)", 500)
