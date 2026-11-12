@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/SENERGY-Platform/go-service-base/struct-logger v0.6.0
 	github.com/bradfitz/gomemcache v0.0.0-20230905024940-24af94b03874
-	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/segmentio/kafka-go v0.4.49

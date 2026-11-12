@@ -20,7 +20,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"sync"
 )

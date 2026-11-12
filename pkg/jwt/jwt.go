@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"slices"
 	"strings"
@@ -57,7 +57,7 @@ func Parse(token string) (claims Token, err error) {
 	if len(token) > 7 && strings.ToLower(token[:7]) == "bearer " {
 		token = token[7:]
 	}
-	_, _, err = new(jwt.Parser).ParseUnverified(token, &claims)
+	_, _, err = jwt.NewParser().ParseUnverified(token, &unverifiedClaims{token: &claims})
 	if err == nil {
 		claims.Token = orig
 	} else {
@@ -77,13 +77,52 @@ func ParseWithValidation(certProvider *KeycloakCertProvider, token string) (clai
 	if len(token) > 7 && strings.ToLower(token[:7]) == "bearer " {
 		token = token[7:]
 	}
-	_, err = new(jwt.Parser).ParseWithClaims(token, &claims, certProvider.GetKeycloakCert)
+	_, err = jwt.NewParser(jwt.WithValidMethods(rsaSigningMethods)).ParseWithClaims(token, &validatedClaims{token: &claims}, certProvider.GetKeycloakCert)
 	if err == nil {
 		claims.Token = orig
 	} else {
 		err = fmt.Errorf("%w: %v", ErrInvalidAuth, err.Error())
 	}
 	return
+}
+
+// rsaSigningMethods are the algs GetKeycloakCert can supply a key for, since it only returns *rsa.PublicKey.
+// Checking them before the key lookup also keeps alg "none" and HS256 tokens from triggering a cert download.
+var rsaSigningMethods = []string{"RS256", "RS384", "RS512", "PS256", "PS384", "PS512"}
+
+// unverifiedClaims adapts Token to jwt.Claims, which Token cannot implement itself
+// because its GetAudience() predates that interface. It reports no registered claims, so nothing is validated.
+type unverifiedClaims struct {
+	token *Token
+}
+
+func (this *unverifiedClaims) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, this.token)
+}
+
+func (this *unverifiedClaims) GetExpirationTime() (*jwt.NumericDate, error) { return nil, nil }
+func (this *unverifiedClaims) GetIssuedAt() (*jwt.NumericDate, error)       { return nil, nil }
+func (this *unverifiedClaims) GetNotBefore() (*jwt.NumericDate, error)      { return nil, nil }
+func (this *unverifiedClaims) GetIssuer() (string, error)                   { return "", nil }
+func (this *unverifiedClaims) GetSubject() (string, error)                  { return "", nil }
+func (this *unverifiedClaims) GetAudience() (jwt.ClaimStrings, error)       { return nil, nil }
+
+// validatedClaims additionally decodes the registered claims, so the parser rejects an expired or not yet valid token,
+// and runs Token.Valid() as the custom validation.
+type validatedClaims struct {
+	token *Token
+	jwt.RegisteredClaims
+}
+
+func (this *validatedClaims) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, this.token); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &this.RegisteredClaims)
+}
+
+func (this *validatedClaims) Validate() error {
+	return this.token.Valid()
 }
 
 type Token struct {
