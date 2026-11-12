@@ -20,16 +20,29 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"sync"
+	"time"
 )
+
+// certFetchTimeout bounds one download of the Keycloak certs, so a slow Keycloak cannot hold requests.
+const certFetchTimeout = 10 * time.Second
+
+// minCertFetchInterval limits downloads triggered by unknown kids; a token with a made-up kid
+// would otherwise cost one download each. A rotated key is found at most this long after the last download.
+const minCertFetchInterval = 10 * time.Second
 
 type KeycloakCertProvider struct {
 	CertUrl string //https://{{keycloak}}/auth/realms/{{realm}}/protocol/openid-connect/certs
 
 	certByKid map[string]*rsa.PublicKey
 	mux       sync.RWMutex
+
+	fetchMux  sync.Mutex
+	lastFetch time.Time
+	client    *http.Client
 }
 
 type KeycloakCerts struct {
@@ -54,11 +67,27 @@ func (this *KeycloakCertProvider) GetKeycloakCert(token *jwt.Token) (interface{}
 	if key, ok := this.getCertByID(kid); ok {
 		return key, nil
 	}
-	resp, err := http.Get(this.CertUrl)
+	// One download at a time; whoever waited finds the key in the cache or is throttled.
+	this.fetchMux.Lock()
+	defer this.fetchMux.Unlock()
+	if key, ok := this.getCertByID(kid); ok {
+		return key, nil
+	}
+	if !this.lastFetch.IsZero() && time.Since(this.lastFetch) < minCertFetchInterval {
+		return nil, errors.New("unknown token kid")
+	}
+	this.lastFetch = time.Now()
+	if this.client == nil {
+		this.client = &http.Client{Timeout: certFetchTimeout}
+	}
+	resp, err := this.client.Get(this.CertUrl)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d from keycloak certs", resp.StatusCode)
+	}
 	certs := KeycloakCerts{}
 	err = json.NewDecoder(resp.Body).Decode(&certs)
 	if err != nil {
@@ -84,9 +113,7 @@ func (this *KeycloakCertProvider) GetKeycloakCert(token *jwt.Token) (interface{}
 func (this *KeycloakCertProvider) getCertByID(id string) (cert *rsa.PublicKey, ok bool) {
 	this.mux.RLock()
 	defer this.mux.RUnlock()
-	if this.certByKid == nil {
-		this.certByKid = map[string]*rsa.PublicKey{}
-	}
+	// Reading a nil map is fine; creating it here would write under the read lock.
 	cert, ok = this.certByKid[id]
 	return
 }
